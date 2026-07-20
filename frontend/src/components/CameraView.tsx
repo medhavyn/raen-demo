@@ -11,34 +11,47 @@ export default function CameraView({ active, capturedImageBase64, anomaly }: Cam
 
   return (
     <div
-style={{
-  position: "relative",
-  width: "100%",
-  height: "420px",
-  // aspectRatio: "16 / 9",
-  borderRadius: 14,
-  overflow: "hidden",
-  background: hasImage
-    ? "#0e131a"
-    : "radial-gradient(circle at 30% 20%, #23303f 0%, #151c26 55%, #0e131a 100%)",
-  border: "1px solid var(--vq-border)",
-  display: "flex",
-  alignItems: "center",
-  justifyContent: "center",
-}} >
+      style={{
+        position: "relative",
+        width: "100%",
+        height: "420px",
+        // aspectRatio: "16 / 9",
+        borderRadius: 14,
+        overflow: "hidden",
+        background: hasImage
+          ? "#0e131a"
+          : "radial-gradient(circle at 30% 20%, #23303f 0%, #151c26 55%, #0e131a 100%)",
+        border: "1px solid var(--vq-border)",
+      }}
+    >
       {/* Captured crop image with annotations baked in */}
       {hasImage && (
-       <img
-          src={`data:image/png;base64,${capturedImageBase64}`}
-          alt="Detected part crop"
+        <div
           style={{
-            display: "block",
-            width: "100%",
-            height: "100%",
-            objectFit: "contain",
-            objectPosition: "center",
-  }}
-/>
+            position: "absolute",
+            inset: 0,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            overflow: "hidden",
+            background: "#0e131a",
+          }}
+        >
+          <img
+            src={`data:image/png;base64,${capturedImageBase64}`}
+            alt="Detected part crop"
+            style={{
+              display: "block",
+              width: "100%",
+              height: "100%",
+              maxWidth: "100%",
+              maxHeight: "100%",
+              objectFit: "contain",
+              objectPosition: "center center",
+              flexShrink: 0,
+            }}
+          />
+        </div>
       )}
 
       {/* Anomaly status badge */}
