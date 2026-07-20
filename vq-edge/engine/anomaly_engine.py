@@ -223,7 +223,7 @@ class AnomalyEngine:
                 return {
                     "label": label,
                     "score": score,
-                    "mask": anomaly_map,
+                    "mask": binary_mask,
                     "results": anomaly_results,
                 }
 
