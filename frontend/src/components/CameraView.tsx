@@ -15,7 +15,7 @@ style={{
   position: "relative",
   width: "100%",
   height: "420px",
-  aspectRatio: "16 / 9",
+  // aspectRatio: "16 / 9",
   borderRadius: 14,
   overflow: "hidden",
   background: hasImage
@@ -28,19 +28,17 @@ style={{
 }} >
       {/* Captured crop image with annotations baked in */}
       {hasImage && (
-        <img
+       <img
           src={`data:image/png;base64,${capturedImageBase64}`}
           alt="Detected part crop"
           style={{
             display: "block",
             width: "100%",
             height: "100%",
-            maxWidth: "100%",
-            maxHeight: "100%",
             objectFit: "contain",
             objectPosition: "center",
-          }}
-        />
+  }}
+/>
       )}
 
       {/* Anomaly status badge */}
@@ -60,9 +58,9 @@ style={{
             zIndex: 10,
           }}
         >
-          {anomaly.count > 0
-            ? `⚠ ANOMALY (${anomaly.score.toFixed(3)})`
-            : `✓ NORMAL (${anomaly.score.toFixed(3)})`}
+              {anomaly.count > 0
+      ? "⚠ UNKNOWN DEFECT"
+      : "✓ NORMAL"}
         </div>
       )}
 

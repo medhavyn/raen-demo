@@ -140,12 +140,12 @@ export default function LiveInspectionPage() {
     // First poll immediately
     void poll();
     pollRef.current = setInterval(poll, POLL_INTERVAL_MS);
-  }, [stopPolling]);
+  }, [stopPolling, expectedTexts]);
 
   // Clean up polling on unmount
   useEffect(() => {
     return () => stopPolling();
-  }, [stopPolling]);
+  }, [stopPolling, expectedTexts]);
 
   // -----------------------------------------------------------------------
   // Handlers
@@ -308,18 +308,20 @@ export default function LiveInspectionPage() {
             style={{
               width: 420,
               display: "grid",
-              gridTemplateColumns: "170px 1fr",
+              gridTemplateColumns: missingItems.length > 0 ? "170px 1fr" : "170px",
               gap: 16,
               minHeight: 460,
             }}
           >
             <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-                <SummaryCard label="Total" value={totalCount} color="var(--vq-text)" />
+              <SummaryCard label="Total" value={totalCount} color="var(--vq-text)" />
               <SummaryCard label="Accepted" value={acceptedCount} color="var(--vq-green)" />
               <SummaryCard label="Rejected" value={rejectedCount} color="var(--vq-red)" />
             </div>
 
-            <WrongTextCard items={missingItems} completed={inspectionComplete} />
+            {missingItems.length > 0 ? (
+              <WrongTextCard items={missingItems} completed={inspectionComplete} />
+            ) : null}
           </div>
 
           {/* Right side */}
