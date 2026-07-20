@@ -22,6 +22,9 @@ style={{
     ? "#0e131a"
     : "radial-gradient(circle at 30% 20%, #23303f 0%, #151c26 55%, #0e131a 100%)",
   border: "1px solid var(--vq-border)",
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
 }} >
       {/* Captured crop image with annotations baked in */}
       {hasImage && (
@@ -29,11 +32,13 @@ style={{
           src={`data:image/png;base64,${capturedImageBase64}`}
           alt="Detected part crop"
           style={{
-            position: "absolute",
-            inset: 0,
+            display: "block",
             width: "100%",
             height: "100%",
+            maxWidth: "100%",
+            maxHeight: "100%",
             objectFit: "contain",
+            objectPosition: "center",
           }}
         />
       )}
