@@ -1,9 +1,7 @@
 import axios from "axios";
 
-// Relative baseURL: Vite dev server proxies /api to the Express backend
-// (see vite.config.ts). In production, serve the frontend behind the same
-// reverse proxy as the backend, or set VITE_API_BASE_URL.
-const baseURL = import.meta.env.VITE_API_BASE_URL || "/api";
+// Frontend calls Python FastAPI directly.
+const baseURL = import.meta.env.VITE_API_BASE_URL || "http://localhost:8001";
 
 export const apiClient = axios.create({ baseURL });
 

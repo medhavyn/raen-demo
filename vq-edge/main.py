@@ -13,6 +13,7 @@ import numpy as np
 from rembg import remove, new_session
 import uvicorn
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 
 from engine.anomaly_engine import AnomalyEngine
 from engine.rfdetr_engine import RFDETREngine
@@ -52,6 +53,14 @@ WARMUP_FRAMES = 10
 # ---------------------------------------------------------------------------
 rembg_session = new_session()
 app = FastAPI(title="VQ Edge Inspection Backend", version="1.0.0")
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:5173"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 def _flush_buffer(cap: cv2.VideoCapture, n: int = 3) -> None:
