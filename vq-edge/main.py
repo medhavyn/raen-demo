@@ -24,8 +24,8 @@ from engine.ocr_engine import OCR_Engine, run_ocr
 # Runtime configuration
 # ---------------------------------------------------------------------------
 CAMERA_INDEX = 0
-ANOMALY_MODEL_PATH = r"C:\Users\medhavyn\OneDrive - Medhavyn Technologies (1)\Dhananjay Odhekar's files - VisionQ-Training-Datasets\rangavishwa\ckpt-models\raen_crompton_anomaly_new.ckpt"
-RFDETR_MODEL_PATH = r"C:\Users\medhavyn\OneDrive - Medhavyn Technologies (1)\Dhananjay Odhekar's files - VisionQ-Training-Datasets\bill-industries\models-rfdetr\biin_0101ES200600N.pth"
+ANOMALY_MODEL_PATH = r"C:\Users\medhavyn\OneDrive - Medhavyn Technologies (1)\Dhananjay Odhekar's files - VisionQ-Training-Datasets\rangavishwa\ckpt-models\siemens_anomaly.ckpt"
+RFDETR_MODEL_PATH = r"C:\Users\medhavyn\OneDrive - Medhavyn Technologies (1)\Dhananjay Odhekar's files - VisionQ-Training-Datasets\sushmi\models-rfdetr\suen_0102ES200700N.pth"
 OCR_MODEL_DIR: str | None = None
 ANOMALY_THRESHOLD = 0.5
 MASK_THRESHOLD = 128
@@ -272,7 +272,17 @@ def _ocr_lines_to_boxes(
     ocr_lines: list[dict[str, Any]],
     image_w: int,
     image_h: int,
+    part_bbox: tuple[int, int, int, int] | None = None,
 ) -> list[dict[str, Any]]:
+    """
+    Convert OCR lines to box format with coordinates relative to original frame.
+    
+    Args:
+        ocr_lines: List of OCR results (with coordinates relative to crop if part_bbox provided)
+        image_w: Width of the display image (original frame or crop)
+        image_h: Height of the display image (original frame or crop)
+        part_bbox: (x1, y1, x2, y2) offset if ocr_lines are in crop space, else None
+    """
     boxes: list[dict[str, Any]] = []
 
     for idx, line in enumerate(ocr_lines):
@@ -281,6 +291,15 @@ def _ocr_lines_to_boxes(
             continue
 
         x1, y1, x2, y2 = normalized_box
+        
+        # If we have a part_bbox offset, add it to convert from crop coords to original coords
+        if part_bbox is not None:
+            px1, py1, _, _ = part_bbox
+            x1 += px1
+            y1 += py1
+            x2 += px1
+            y2 += py1
+
         boxes.append(
             {
                 "id": f"ocr-{idx + 1}",
@@ -414,7 +433,7 @@ def _build_payload(
     """
     Build a JSON-serialisable payload from pipeline results.
 
-    The displayed image is the **crop** of the detected part with:
+    The displayed image is the **original full frame** with:
       - Anomaly heatmap overlay (when anomaly detected)
       - Green bounding boxes around each OCR-detected text region with labels
     """
@@ -426,64 +445,87 @@ def _build_payload(
     anomaly_score = float(anomaly.get("score", 0.0) or 0.0)
     anomaly_label = int(anomaly.get("label", 0) or 0)
 
-    # ---- Build the annotated crop image ----
-    has_crop = (
-        isinstance(part_result, dict)
-        and part_result.get("crop") is not None
-        and part_result["crop"].size > 0
-    )
-
-    if has_crop:
-        crop = part_result["crop"]
+    # ---- Build the annotated original image ----
+    annotated = image_bgr.copy()
+    part_bbox = None
+    
+    if isinstance(part_result, dict):
         part_bbox = part_result.get("bbox")  # (x1, y1, x2, y2) in full-frame coords
-        annotated = crop.copy()
-        crop_h, crop_w = annotated.shape[:2]
 
-        print(f"[Build Payload] Crop size: {crop_w}x{crop_h}, Anomaly count: {anomaly_count}, OCR lines: {len(ocr_lines)}")
+    print(f"[Build Payload] Original frame size: {image_w}x{image_h}, Anomaly count: {anomaly_count}, OCR lines: {len(ocr_lines)}")
 
-        # --- Anomaly heatmap on crop (only when anomaly detected) ---
-        mask = anomaly.get("mask")
-        if isinstance(mask, np.ndarray) and mask.size > 0 and anomaly_count > 0:
-            print("[Build Payload] Applying anomaly heatmap overlay...")
-            if len(mask.shape) == 3:
-                mask = cv2.cvtColor(mask, cv2.COLOR_BGR2GRAY)
-            if mask.shape[:2] != (image_h, image_w):
-                mask = cv2.resize(mask, (image_w, image_h), interpolation=cv2.INTER_LINEAR)
+    # --- Anomaly heatmap on original frame (only when anomaly detected) ---
+    mask = anomaly.get("mask")
+    if isinstance(mask, np.ndarray) and mask.size > 0 and anomaly_count > 0:
+        print("[Build Payload] Applying anomaly heatmap overlay to original frame...")
+        if len(mask.shape) == 3:
+            mask = cv2.cvtColor(mask, cv2.COLOR_BGR2GRAY)
+        if mask.shape[:2] != (image_h, image_w):
+            mask = cv2.resize(mask, (image_w, image_h), interpolation=cv2.INTER_LINEAR)
 
-            # Crop the anomaly map to the detected part region
-            px1, py1, px2, py2 = [int(v) for v in part_bbox]
-            mask_crop = mask[py1:py2, px1:px2]
-            if mask_crop.shape[:2] != (crop_h, crop_w):
-                mask_crop = cv2.resize(mask_crop, (crop_w, crop_h), interpolation=cv2.INTER_LINEAR)
+        heatmap = cv2.applyColorMap(mask.astype(np.uint8), cv2.COLORMAP_JET)
 
-            heatmap = cv2.applyColorMap(mask_crop.astype(np.uint8), cv2.COLORMAP_JET)
+        # Per-pixel alpha — only overlay where anomaly values are significant
+        alpha = np.zeros((image_h, image_w), dtype=np.float32)
+        alpha[mask.astype(np.float32) > 30] = 0.45
+        alpha_3ch = np.stack([alpha] * 3, axis=-1)
+        annotated = (
+            annotated.astype(np.float32) * (1 - alpha_3ch)
+            + heatmap.astype(np.float32) * alpha_3ch
+        ).astype(np.uint8)
 
-            # Per-pixel alpha — only overlay where anomaly values are significant
-            alpha = np.zeros((crop_h, crop_w), dtype=np.float32)
-            alpha[mask_crop.astype(np.float32) > 30] = 0.45
-            alpha_3ch = np.stack([alpha] * 3, axis=-1)
-            annotated = (
-                annotated.astype(np.float32) * (1 - alpha_3ch)
-                + heatmap.astype(np.float32) * alpha_3ch
-            ).astype(np.uint8)
-
-        # --- ✓ FIXED: Draw green bounding boxes for OCR text using helper function ---
+    # --- ✓ FIXED: Draw green bounding boxes for OCR text on original frame ---
+    if ocr_lines and part_bbox is not None:
+        print(f"[Build Payload] Drawing {len(ocr_lines)} OCR bounding boxes on original frame...")
+        
+        # Adjust OCR boxes from crop coordinates to original frame coordinates
+        crop_h, crop_w = None, None
+        if isinstance(part_result, dict) and part_result.get("crop") is not None:
+            crop_h, crop_w = part_result["crop"].shape[:2]
+        
+        adjusted_ocr_lines = []
+        px1, py1, _, _ = part_bbox
+        
+        for line in ocr_lines:
+            adj_line = line.copy()
+            box = line.get("box")
+            
+            # Convert box coordinates from crop space to original frame space
+            if box is not None:
+                try:
+                    box_array = np.array(box)
+                    if box_array.ndim == 2 and box_array.shape[1] == 2:
+                        # Polygon format: add offset to all points
+                        box_array[:, 0] += px1
+                        box_array[:, 1] += py1
+                        adj_line["box"] = box_array.tolist()
+                    elif box_array.ndim == 1 and len(box_array) == 4:
+                        # [x1, y1, x2, y2] format
+                        adj_line["box"] = [
+                            box_array[0] + px1,
+                            box_array[1] + py1,
+                            box_array[2] + px1,
+                            box_array[3] + py1,
+                        ]
+                except Exception as e:
+                    print(f"[Build Payload] Error adjusting box: {e}")
+            
+            adjusted_ocr_lines.append(adj_line)
+        
+        # Draw on the full-size frame
+        annotated = _annotate_ocr_lines(annotated, adjusted_ocr_lines)
+    else:
         if ocr_lines:
-            print(f"[Build Payload] Drawing {len(ocr_lines)} OCR bounding boxes on crop...")
-            annotated = _annotate_ocr_lines(annotated, ocr_lines)
+            print("[Build Payload] OCR lines exist but no part_bbox to adjust coordinates")
         else:
             print("[Build Payload] No OCR lines to annotate")
 
-        boxes = _ocr_lines_to_boxes(ocr_lines, crop_w, crop_h)
+    # Convert boxes to percentages based on original frame dimensions
+    boxes = _ocr_lines_to_boxes(ocr_lines, image_w, image_h, part_bbox=part_bbox)
 
-        ui_image = _build_ocr_focus_image(annotated, ocr_lines)
-        captured_image_b64 = _encode_image_to_base64_png(ui_image)
-        print("[Build Payload] Annotated crop encoded to PNG and base64")
-    else:
-        # No crop available — show the raw camera frame
-        print("[Build Payload] No crop available, using raw frame")
-        captured_image_b64 = _encode_image_to_base64_png(image_bgr)
-        boxes = []
+    # Encode the full original frame with annotations
+    captured_image_b64 = _encode_image_to_base64_png(annotated)
+    print("[Build Payload] Annotated original frame encoded to PNG and base64")
 
     # ---- Compute summary stats ----
     total = len(ocr_lines)
