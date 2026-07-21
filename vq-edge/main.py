@@ -13,6 +13,7 @@ import numpy as np
 from rembg import remove, new_session
 import uvicorn
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 
 from engine.anomaly_engine import AnomalyEngine
 from engine.rfdetr_engine import RFDETREngine
@@ -24,7 +25,7 @@ from engine.ocr_engine import OCR_Engine, run_ocr
 # Runtime configuration
 # ---------------------------------------------------------------------------
 CAMERA_INDEX = 0
-ANOMALY_MODEL_PATH = r"C:\Users\medhavyn\OneDrive - Medhavyn Technologies (1)\Dhananjay Odhekar's files - VisionQ-Training-Datasets\rangavishwa\ckpt-models\siemens_anomaly.ckpt"
+ANOMALY_MODEL_PATH = r"C:\Users\medhavyn\OneDrive - Medhavyn Technologies (1)\Dhananjay Odhekar's files - VisionQ-Training-Datasets\rangavishwa\ckpt-models\raen_anomaly.ckpt"
 RFDETR_MODEL_PATH = r"C:\Users\medhavyn\OneDrive - Medhavyn Technologies (1)\Dhananjay Odhekar's files - VisionQ-Training-Datasets\sushmi\models-rfdetr\suen_0102ES200700N.pth"
 OCR_MODEL_DIR: str | None = None
 ANOMALY_THRESHOLD = 0.5
@@ -52,6 +53,13 @@ WARMUP_FRAMES = 10
 # ---------------------------------------------------------------------------
 rembg_session = new_session()
 app = FastAPI(title="VQ Edge Inspection Backend", version="1.0.0")
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 def _flush_buffer(cap: cv2.VideoCapture, n: int = 3) -> None:
