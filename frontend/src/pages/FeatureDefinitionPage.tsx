@@ -1,13 +1,15 @@
 import { useEffect, useMemo, useState } from "react";
 import { AppstoreOutlined, DeleteOutlined, PlusOutlined } from "@ant-design/icons";
-import { Button, Card, Input, message } from "antd";
+import { Button, Card, Input, Select, message } from "antd";
 import { useNavigate } from "react-router-dom";
 import { loadExpectedTexts, parseExpectedTexts, saveExpectedTexts } from "../utils/expectedText";
+import partsData from "../data/partsFeatures.json";
 
 export default function FeatureDefinitionPage() {
   const navigate = useNavigate();
   const [features, setFeatures] = useState<string[]>([]);
   const [isSaved, setIsSaved] = useState(false);
+  const [selectedPartId, setSelectedPartId] = useState<string | undefined>();
 
   useEffect(() => {
     const draft = window.localStorage.getItem("vq-expected-texts-draft");
@@ -60,6 +62,20 @@ export default function FeatureDefinitionPage() {
       message.error("Failed to save features");
     }
   }
+
+  function handlePartChange(partId: string) {
+  const selectedPart = partsData.parts.find(
+    (part) => part.id === partId
+  );
+
+  if (!selectedPart) {
+    return;
+  }
+
+  setSelectedPartId(partId);
+  setFeatures([...selectedPart.features]);
+  setIsSaved(false);
+}
 
   function addFeature() {
     setFeatures((prev) => [...prev, ""]);
@@ -137,6 +153,30 @@ export default function FeatureDefinitionPage() {
             </div>
 
             <div style={{ padding: 18, background: "#fff" }}>
+            <div style={{ marginBottom: 20 }}>
+  <div
+    style={{
+      fontSize: 14,
+      fontWeight: 600,
+      marginBottom: 8,
+    }}
+  >
+    Select Part
+  </div>
+
+  <Select
+    placeholder="Select Part"
+    value={selectedPartId}
+    onChange={handlePartChange}
+    style={{
+      width: 250,
+    }}
+    options={partsData.parts.map((part) => ({
+      label: part.name,
+      value: part.id,
+    }))}
+  />
+</div>
               <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
                 {features.length === 0 ? null : features.map((value, idx) => (
                   <div key={idx} style={{ display: "flex", gap: 8, alignItems: "center" }}>
