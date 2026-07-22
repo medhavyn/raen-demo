@@ -215,7 +215,7 @@ export default function LiveInspectionPage() {
     status === "scanning"
       ? "SCAN STARTED"
       : status === "paused"
-        ? "SCAN PAUSED — ANOMALY DETECTED"
+        ? "SCAN PAUSED"
         : status === "finished"
           ? "SCAN FINISHED"
           : "SCAN IDLE";

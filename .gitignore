@@ -19,6 +19,7 @@ venv/
 # ── Uploads (keep the directory, ignore contents) 
 server/uploads/*
 !server/uploads/.gitkeep
+vq-edge/results/*
 
 # ── Build artifacts ──────────────────────────────
 *.log

@@ -383,14 +383,7 @@ def run_single_frame(
     min_area: int = 50,
     rfdetr_threshold: float = 0.7,
 ) -> dict[str, Any]:
-    """
-    Run the full pipeline on a single captured frame:
-      1. Remove background
-      2. Anomaly detection (on bg-removed image)
-      3. Part detection (RF-DETR) + crop (on original frame)
-      4. OCR on the cropped region
-    Returns a dict ready to be sent to the frontend.
-    """
+    """Run the full pipeline on a single captured frame"""
     image_rgb = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGB)
 
     # Step 1: Remove background
@@ -413,14 +406,16 @@ def run_single_frame(
     )
     part_result = rfdetr_engine.detect_part(frame_bgr)
 
+
     # Step 4: OCR on cropped part
     # ✓ FIXED: Use corrected OCR engine with proper configuration
     ocr_lines = []
     if part_result is not None:
         crop_bgr = part_result["crop"]
+        crop_rgb = cv2.cvtColor(crop_bgr, cv2.COLOR_BGR2RGB)
         if crop_bgr.size > 0:
             ocr_engine = OCR_Engine(model_dir=ocr_model_dir, device="gpu:0")
-            ocr_result = run_ocr(crop_bgr, ocr_engine)
+            ocr_result = run_ocr(crop_rgb, ocr_engine)
             ocr_lines = ocr_result["lines"]
             
             # Debug: log the extracted OCR lines
