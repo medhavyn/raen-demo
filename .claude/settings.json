@@ -47,7 +47,10 @@
       "Read(//c/repos/raen-demo/.claude/skills/run/examples/**)",
       "Bash(command -v chromium-cli)",
       "Bash(echo \"exit:$?\")",
-      "Bash(npx --yes playwright install chromium)"
+      "Bash(npx --yes playwright install chromium)",
+      "Bash(python -c \"import supervision as sv; print\\(sv.__version__\\); help\\(sv.PolygonAnnotator.__init__\\)\")",
+      "Bash(python -m pip show supervision)",
+      "Bash(./.venv/Scripts/python.exe -c ' *)"
     ],
     "additionalDirectories": [
       "C:\\repos\\raen-demo\\vq-app\\@\\components\\ui"

@@ -10,6 +10,7 @@ from typing import Any
 
 import cv2
 import numpy as np
+import supervision as sv
 from rembg import remove, new_session
 import uvicorn
 from fastapi import FastAPI
@@ -472,24 +473,23 @@ def _build_payload(
         f"[Build Payload] Original frame size: {image_w}x{image_h}, Anomaly count: {anomaly_count}, OCR lines: {len(ocr_lines)}"
     )
 
-    # --- Anomaly heatmap on original frame (only when anomaly detected) ---
+    # --- Anomaly outline on original frame (only when anomaly detected) ---
     mask = anomaly.get("mask")
     if isinstance(mask, np.ndarray) and mask.size > 0 and anomaly_count > 0:
-        print("[Build Payload] Applying anomaly heatmap overlay to original frame...")
+        print("[Build Payload] Drawing anomaly outline on original frame...")
         if len(mask.shape) == 3:
             mask = cv2.cvtColor(mask, cv2.COLOR_BGR2GRAY)
         if mask.shape[:2] != (image_h, image_w):
             mask = cv2.resize(mask, (image_w, image_h), interpolation=cv2.INTER_LINEAR)
 
-        heatmap = cv2.applyColorMap(mask.astype(np.uint8), cv2.COLORMAP_JET)
-
-        # Per-pixel alpha — only overlay where anomaly values are significant
-        alpha = np.zeros((image_h, image_w), dtype=np.float32)
-        alpha[mask.astype(np.float32) > 30] = 0.45
-        alpha_3ch = np.stack([alpha] * 3, axis=-1)
-        annotated = (annotated.astype(np.float32) * (1 - alpha_3ch) + heatmap.astype(np.float32) * alpha_3ch).astype(
-            np.uint8
-        )
+        binary_mask = mask.astype(np.float32) > 30
+        if binary_mask.any():
+            detections = sv.Detections(
+                xyxy=np.array([[0, 0, image_w, image_h]], dtype=np.float32),
+                mask=binary_mask[np.newaxis, ...],
+            )
+            polygon_annotator = sv.PolygonAnnotator(color=sv.Color.RED, thickness=8, color_lookup=sv.ColorLookup.INDEX)
+            annotated = polygon_annotator.annotate(scene=annotated, detections=detections)
 
     # --- ✓ FIXED: Draw green bounding boxes for OCR text on original frame ---
     if ocr_lines and part_bbox is not None:
