@@ -74,15 +74,15 @@ export default function FeatureDefinitionPage() {
       }}
     >
       <div className="flex items-center gap-3 py-3">
-        <img src="/etavat-logo.svg" alt="etavat" className="h-8 w-auto" />
+        <img src="/etavat-logo.svg" alt="etavat" className="h-6 w-auto" />
         <div className="text-xl font-semibold">Etavat VisionQ Inspection</div>
       </div>
 
       <div className="py-3">
-        <Card className="p-6">
+        <div className="p-6 bg-card rounded-md">
           <div className="flex items-center gap-2.5 pb-4">
-            <div className="flex h-9.5 w-9.5 items-center justify-center rounded-md bg-primary text-primary-foreground">
-              <LayoutGrid className="h-4.5 w-4.5" />
+            <div className="flex p-1 items-center justify-center rounded-md bg-primary text-primary-foreground">
+              <LayoutGrid className="size-5" />
             </div>
             <div className="text-base font-bold">Features</div>
           </div>
@@ -108,9 +108,9 @@ export default function FeatureDefinitionPage() {
             <Button
               variant="outline"
               onClick={addFeature}
-              className="border-[#cfe0ff] bg-white"
+              className="border-dashed text-muted-foreground text-xs"
             >
-              <Plus className="h-4 w-4" />
+              <Plus className="size-4" />
               Add Feature
             </Button>
           </div>
@@ -120,7 +120,7 @@ export default function FeatureDefinitionPage() {
               <img
                 src={selectedPart.photo}
                 alt={selectedPart.name}
-                className="h-64 aspect-4/3 shrink-0 rounded-lg border border-[#e6f0fb] object-cover"
+                className="h-64 aspect-4/3 shrink-0 rounded-md border border-[#e6f0fb] object-cover"
               />
             )}
 
@@ -131,7 +131,6 @@ export default function FeatureDefinitionPage() {
                     value={value}
                     onChange={(e) => updateFeature(idx, e.target.value)}
                     placeholder="Enter feature name"
-                    className="rounded-lg"
                   />
                   <Button
                     variant="destructive"
@@ -150,12 +149,12 @@ export default function FeatureDefinitionPage() {
               size="lg"
               disabled={!selectedPartId}
               onClick={handleStartInspection}
-              className="min-w-45 border-none bg-vq-green text-white hover:bg-vq-green-dark"
+              className="bg-vq-green text-primary-foreground hover:bg-vq-green-dark"
             >
               Start Inspection
             </Button>
           </div>
-        </Card>
+        </div>
       </div>
     </div>
   );

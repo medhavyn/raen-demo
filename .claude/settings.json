@@ -41,7 +41,13 @@
       "Bash(node -e \"console.log\\(require.resolve\\('playwright'\\)\\)\")",
       "Bash(kill %1)",
       "Bash(jobs -l)",
-      "Bash(npx --yes playwright@1.55.0 install chromium --with-deps)"
+      "Bash(npx --yes playwright@1.55.0 install chromium --with-deps)",
+      "Bash(which chromium-cli *)",
+      "Read(//usr/local/**)",
+      "Read(//c/repos/raen-demo/.claude/skills/run/examples/**)",
+      "Bash(command -v chromium-cli)",
+      "Bash(echo \"exit:$?\")",
+      "Bash(npx --yes playwright install chromium)"
     ],
     "additionalDirectories": [
       "C:\\repos\\raen-demo\\vq-app\\@\\components\\ui"
