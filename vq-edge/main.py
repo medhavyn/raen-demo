@@ -17,16 +17,25 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from engine.anomaly_engine import AnomalyEngine
 from engine.rfdetr_engine import RFDETREngine
+
 # ✓ FIXED: Import corrected OCR engine and extraction helper
 from engine.ocr_engine import OCR_Engine, run_ocr
-
 
 # ---------------------------------------------------------------------------
 # Runtime configuration
 # ---------------------------------------------------------------------------
-CAMERA_INDEX = 0
-ANOMALY_MODEL_PATH = r"C:\Users\medhavyn\OneDrive - Medhavyn Technologies (1)\Dhananjay Odhekar's files - VisionQ-Training-Datasets\rangavishwa\ckpt-models\raen_anomaly.ckpt"
-RFDETR_MODEL_PATH = r"C:\Users\medhavyn\OneDrive - Medhavyn Technologies (1)\Dhananjay Odhekar's files - VisionQ-Training-Datasets\sushmi\models-rfdetr\suen_0102ES200700N.pth"
+INPUT_SOURCE = "image"  # "camera" | "image"
+IMAGE_PATH: str | None = (
+    r"C:\Users\dodhe\OneDrive - Medhavyn Technologies\VisionQ\rangavishwa\images-not-datasets\crompton\bad\Image_20260716124020557.bmp"
+)
+
+CAMERA_INDEX = 2
+ANOMALY_MODEL_PATH = (
+    r"C:\Users\dodhe\OneDrive - Medhavyn Technologies\VisionQ\rangavishwa\ckpt-models\crompton_anomaly.ckpt"
+)
+RFDETR_MODEL_PATH = (
+    r"C:\Users\dodhe\OneDrive - Medhavyn Technologies\VisionQ\sushmi\models-rfdetr\suen_0102ES200700N.pth"
+)
 OCR_MODEL_DIR: str | None = None
 ANOMALY_THRESHOLD = 0.5
 MASK_THRESHOLD = 128
@@ -80,6 +89,14 @@ def _open_camera(camera_index: int) -> cv2.VideoCapture:
     cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
     cap.set(cv2.CAP_PROP_AUTOFOCUS, 1)
     return cap
+
+
+def _load_image_frame(image_path: str) -> np.ndarray:
+    """Load a frame directly from disk (no camera/OBS involved)."""
+    frame_bgr = cv2.imread(image_path)
+    if frame_bgr is None:
+        raise RuntimeError(f"Failed to read image from disk: {image_path}")
+    return frame_bgr
 
 
 def _capture_latest_frame(
@@ -233,46 +250,43 @@ def _encode_image_to_base64_png(image: np.ndarray | None) -> str | None:
 # ---------------------------------------------------------------------------
 # OCR annotation helper
 # ---------------------------------------------------------------------------
-def _annotate_ocr_lines(
-    image_bgr: np.ndarray, 
-    ocr_lines: list[dict[str, Any]]
-) -> np.ndarray:
+def _annotate_ocr_lines(image_bgr: np.ndarray, ocr_lines: list[dict[str, Any]]) -> np.ndarray:
     """
     Draw green bounding boxes and text labels on the image for each OCR detection.
-    
+
     Args:
         image_bgr: Input image in BGR format (will be copied before modification)
         ocr_lines: List of OCR results from extract_ocr_lines() with 'text' and 'box' keys
-        
+
     Returns:
         Annotated image with drawn boxes and text labels
     """
     annotated = image_bgr.copy()
-    
+
     if not ocr_lines:
         return annotated
 
     img_h, img_w = annotated.shape[:2]
-    
+
     for line in ocr_lines:
         text = line.get("text", "")
         box = line.get("box")
         score = line.get("score")
-        
+
         normalized_box = _normalize_bbox(box, img_w, img_h)
         if normalized_box is None:
             continue
-        
+
         try:
             bx1, by1, bx2, by2 = normalized_box
-            
+
             # Draw green rectangle around detected text
             cv2.rectangle(annotated, (bx1, by1), (bx2, by2), (0, 255, 0), 2)
-            
+
         except Exception as e:
             print(f"[OCR Annotation] Error drawing box {box}: {e}")
             continue
-    
+
     return annotated
 
 
@@ -284,7 +298,7 @@ def _ocr_lines_to_boxes(
 ) -> list[dict[str, Any]]:
     """
     Convert OCR lines to box format with coordinates relative to original frame.
-    
+
     Args:
         ocr_lines: List of OCR results (with coordinates relative to crop if part_bbox provided)
         image_w: Width of the display image (original frame or crop)
@@ -299,7 +313,7 @@ def _ocr_lines_to_boxes(
             continue
 
         x1, y1, x2, y2 = normalized_box
-        
+
         # If we have a part_bbox offset, add it to convert from crop coords to original coords
         if part_bbox is not None:
             px1, py1, _, _ = part_bbox
@@ -406,7 +420,6 @@ def run_single_frame(
     )
     part_result = rfdetr_engine.detect_part(frame_bgr)
 
-
     # Step 4: OCR on cropped part
     # ✓ FIXED: Use corrected OCR engine with proper configuration
     ocr_lines = []
@@ -417,7 +430,7 @@ def run_single_frame(
             ocr_engine = OCR_Engine(model_dir=ocr_model_dir, device="gpu:0")
             ocr_result = run_ocr(crop_rgb, ocr_engine)
             ocr_lines = ocr_result["lines"]
-            
+
             # Debug: log the extracted OCR lines
             print(f"[Pipeline] Extracted {len(ocr_lines)} OCR lines from crop")
             for i, line in enumerate(ocr_lines):
@@ -451,11 +464,13 @@ def _build_payload(
     # ---- Build the annotated original image ----
     annotated = image_bgr.copy()
     part_bbox = None
-    
+
     if isinstance(part_result, dict):
         part_bbox = part_result.get("bbox")  # (x1, y1, x2, y2) in full-frame coords
 
-    print(f"[Build Payload] Original frame size: {image_w}x{image_h}, Anomaly count: {anomaly_count}, OCR lines: {len(ocr_lines)}")
+    print(
+        f"[Build Payload] Original frame size: {image_w}x{image_h}, Anomaly count: {anomaly_count}, OCR lines: {len(ocr_lines)}"
+    )
 
     # --- Anomaly heatmap on original frame (only when anomaly detected) ---
     mask = anomaly.get("mask")
@@ -472,27 +487,26 @@ def _build_payload(
         alpha = np.zeros((image_h, image_w), dtype=np.float32)
         alpha[mask.astype(np.float32) > 30] = 0.45
         alpha_3ch = np.stack([alpha] * 3, axis=-1)
-        annotated = (
-            annotated.astype(np.float32) * (1 - alpha_3ch)
-            + heatmap.astype(np.float32) * alpha_3ch
-        ).astype(np.uint8)
+        annotated = (annotated.astype(np.float32) * (1 - alpha_3ch) + heatmap.astype(np.float32) * alpha_3ch).astype(
+            np.uint8
+        )
 
     # --- ✓ FIXED: Draw green bounding boxes for OCR text on original frame ---
     if ocr_lines and part_bbox is not None:
         print(f"[Build Payload] Drawing {len(ocr_lines)} OCR bounding boxes on original frame...")
-        
+
         # Adjust OCR boxes from crop coordinates to original frame coordinates
         crop_h, crop_w = None, None
         if isinstance(part_result, dict) and part_result.get("crop") is not None:
             crop_h, crop_w = part_result["crop"].shape[:2]
-        
+
         adjusted_ocr_lines = []
         px1, py1, _, _ = part_bbox
-        
+
         for line in ocr_lines:
             adj_line = line.copy()
             box = line.get("box")
-            
+
             # Convert box coordinates from crop space to original frame space
             if box is not None:
                 try:
@@ -512,9 +526,9 @@ def _build_payload(
                         ]
                 except Exception as e:
                     print(f"[Build Payload] Error adjusting box: {e}")
-            
+
             adjusted_ocr_lines.append(adj_line)
-        
+
         # Draw on the full-size frame
         annotated = _annotate_ocr_lines(annotated, adjusted_ocr_lines)
     else:
@@ -539,10 +553,12 @@ def _build_payload(
 
     wrong_text = []
     if anomaly_count > 0:
-        wrong_text.append({
-            "text": "Anomaly region detected",
-            "reason": f"score={anomaly_score:.3f}",
-        })
+        wrong_text.append(
+            {
+                "text": "Anomaly region detected",
+                "reason": f"score={anomaly_score:.3f}",
+            }
+        )
 
     # Strip internal box coords before sending to frontend
     # ✓ FIXED: Keep only text and score, remove box from frontend payload
@@ -593,23 +609,29 @@ def _inspection_loop(state: InspectionState) -> None:
 
     The camera stays open for the entire session (no open/close per frame).
     """
-    print(f"[Inspection Loop] Opening camera index {CAMERA_INDEX}...")
-    try:
-        cap = _open_camera(CAMERA_INDEX)
-    except RuntimeError as exc:
-        error_msg = str(exc)
-        print(f"[Inspection Loop] {error_msg}")
-        state.latest_result = _make_empty_result(error=error_msg)
-        state.status = "idle"
-        return
+    use_camera = INPUT_SOURCE == "camera"
+    cap: cv2.VideoCapture | None = None
 
-    actual_w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-    actual_h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-    print(f"[Inspection Loop] Camera resolution: {actual_w}x{actual_h}")
+    if use_camera:
+        print(f"[Inspection Loop] Opening camera index {CAMERA_INDEX}...")
+        try:
+            cap = _open_camera(CAMERA_INDEX)
+        except RuntimeError as exc:
+            error_msg = str(exc)
+            print(f"[Inspection Loop] {error_msg}")
+            state.latest_result = _make_empty_result(error=error_msg)
+            state.status = "idle"
+            return
 
-    print("[Inspection Loop] Settling autofocus/auto-exposure...")
+    else:
+        if not IMAGE_PATH:
+            error_msg = "INPUT_SOURCE is 'image' but IMAGE_PATH is not set"
+            print(f"[Inspection Loop] {error_msg}")
+            state.latest_result = _make_empty_result(error=error_msg)
+            state.status = "idle"
+            return
+        print(f"[Inspection Loop] Reading frames from image file: {IMAGE_PATH}")
 
-    print("[Inspection Loop] Camera ready. Starting continuous inspection...")
     frame_count = 0
 
     try:
@@ -620,7 +642,10 @@ def _inspection_loop(state: InspectionState) -> None:
                 break
 
             try:
-                frame_bgr = _capture_latest_frame(cap)
+                if use_camera:
+                    frame_bgr = _capture_latest_frame(cap)
+                else:
+                    frame_bgr = _load_image_frame(IMAGE_PATH)
             except RuntimeError as exc:
                 print(f"[Inspection Loop] {exc}")
                 time.sleep(0.5)
@@ -646,8 +671,7 @@ def _inspection_loop(state: InspectionState) -> None:
                 # Check if anomaly/wrong part detected
                 anomaly_count = result.get("anomaly", {}).get("count", 0)
                 if anomaly_count > 0:
-                    print(f"[Inspection Loop] ⚠ Anomaly detected on frame #{frame_count}! "
-                          f"Pausing for review.")
+                    print(f"[Inspection Loop] ⚠ Anomaly detected on frame #{frame_count}! " f"Pausing for review.")
                     state.status = "paused"
                     state._pause_event.clear()
                     # Don't break — user can resume after reviewing
@@ -655,6 +679,7 @@ def _inspection_loop(state: InspectionState) -> None:
             except Exception as exc:
                 print(f"[Inspection Loop] Pipeline error on frame #{frame_count}: {exc}")
                 import traceback
+
                 traceback.print_exc()  # ✓ FIXED: Added traceback for debugging
                 error_result = _make_empty_result(error=f"Pipeline error: {exc}")
                 # Encode the raw frame so the user can at least see what was captured
@@ -666,8 +691,9 @@ def _inspection_loop(state: InspectionState) -> None:
             time.sleep(LOOP_INTERVAL)
 
     finally:
-        cap.release()
-        print(f"[Inspection Loop] Camera released. Processed {frame_count} frames total.")
+        if cap is not None:
+            cap.release()
+        print(f"[Inspection Loop] Processed {frame_count} frames total.")
 
 
 # ---------------------------------------------------------------------------
