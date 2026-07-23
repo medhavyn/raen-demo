@@ -1,0 +1,38 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm create *)",
+      "Bash(npm install *)",
+      "Bash(npx shadcn@latest init --yes --base-color slate)",
+      "Bash(npx shadcn@latest init --yes)",
+      "Bash(npx shadcn@latest init --help)",
+      "Bash(npx shadcn@latest init -b radix -t vite -y -c .)",
+      "Bash(npx shadcn@latest init -b radix -t vite -p base-nova -y -c .)",
+      "Bash(npx shadcn@latest init -b radix -t vite -p nova -y -c .)",
+      "Bash(npx shadcn@4.13.0 init -b radix -t vite -p nova -y -c .)",
+      "Bash(npx shadcn@4.13.0 init -b radix -t vite -p nova -y -f -c .)",
+      "Bash(npx shadcn@4.12.0 init -b radix -t vite -p nova -y -f -c .)",
+      "Bash(npm uninstall *)",
+      "Bash(npx shadcn@4.12.0 add button input select card badge sonner -y -c .)",
+      "Bash(mkdir -p src/components/ui src/lib *)",
+      "Bash(npm run *)",
+      "Read(//tmp/**)",
+      "Bash(curl -s http://localhost:5174/ -o /dev/null -w \"%{http_code}\\\\n\")",
+      "Bash(chromium-cli --session vqapp)",
+      "Bash(npx --yes playwright --version)",
+      "Bash(npx playwright *)",
+      "Bash(mkdir -p \"/c/Users/dodhe/AppData/Local/Temp/claude/c--repos-raen-demo/debccfb0-a486-4b61-b3e9-5601c36c82dd/scratchpad/pw\")",
+      "Read(//c/Users/dodhe/AppData/Local/Temp/claude/c--repos-raen-demo/debccfb0-a486-4b61-b3e9-5601c36c82dd/scratchpad/**)",
+      "Bash(npm init *)",
+      "Read(//c/Users/dodhe/AppData/Local/Temp/claude/c--repos-raen-demo/debccfb0-a486-4b61-b3e9-5601c36c82dd/scratchpad/pw/**)",
+      "Bash(echo \"EXIT:$?\")",
+      "Bash(node shot.js)",
+      "Bash(node shot2.js)",
+      "Bash(lsof -ti:5174 -sTCP:LISTEN)",
+      "Bash(xargs -r kill)"
+    ],
+    "additionalDirectories": [
+      "C:\\repos\\raen-demo\\vq-app\\@\\components\\ui"
+    ]
+  }
+}
