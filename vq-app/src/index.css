@@ -155,6 +155,30 @@ body {
     animation: status-animation 3s linear infinite;
   }
 
+  @keyframes scanning-grid-animation {
+    0% {
+      transform: translate(0, 0);
+    }
+
+    100% {
+      transform: translate(-40px, -40px);
+    }
+  }
+
+  .animated-scanning-grid {
+    animation: scanning-grid-animation 1s linear infinite;
+  }
+
+  @keyframes grid-wave-animation {
+    0% {
+      background-position: -50% 0%;
+    }
+
+    100% {
+      background-position: 150% 0%;
+    }
+  }
+
   .status-idle {
     color: var(--color-foreground);
     background-image: linear-gradient(to right,

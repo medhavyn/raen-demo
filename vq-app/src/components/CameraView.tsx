@@ -40,7 +40,11 @@ export default function CameraView({ active, capturedImageBase64, anomaly }: Cam
 
       {/* Grid placeholder when no image */}
       {!hasImage && (
-        <svg width="100%" height="100%" className="absolute inset-0 opacity-25">
+        <svg
+          width="100%"
+          height="100%"
+          className={`absolute inset-0 opacity-25 ${active ? "animated-scanning-grid" : ""}`}
+        >
           <defs>
             <pattern id="vq-grid" width="40" height="40" patternUnits="userSpaceOnUse">
               <path d="M40 0H0V40" fill="none" stroke="#3a4a5c" strokeWidth="1" />

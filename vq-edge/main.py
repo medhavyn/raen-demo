@@ -176,6 +176,7 @@ class InspectionState:
     def resume(self) -> None:
         self._pause_event.set()
         self.status = "scanning"
+        self.latest_result = None
 
     def finish(self) -> None:
         self._stop_event.set()
