@@ -11,7 +11,7 @@ export default function CameraView({ active, capturedImageBase64, anomaly }: Cam
 
   return (
     <div
-      className="relative h-[420px] w-full overflow-hidden rounded-[14px] border border-vq-border"
+      className="relative min-h-[420px] w-full flex-1 overflow-hidden rounded-md border border-vq-border"
       style={{
         background: hasImage
           ? "#0e131a"
@@ -32,10 +32,9 @@ export default function CameraView({ active, capturedImageBase64, anomaly }: Cam
       {/* Anomaly status badge */}
       {anomaly && hasImage && (
         <div
-          className="absolute top-2.5 right-2.5 z-10 rounded-md px-2.5 py-1 text-xs font-bold text-white backdrop-blur-sm"
-          style={{ background: anomaly.count > 0 ? "rgba(239,68,68,0.9)" : "rgba(34,197,94,0.9)" }}
+          className={`${anomaly.count > 0 ? "animated-part-rejected": "bg-vq-green"} absolute top-3 left-3 z-10 rounded-md p-3 font-semibold text-primary-foreground backdrop-blur-sm`}
         >
-          {anomaly.count > 0 ? "⚠ UNKNOWN DEFECT" : "✓ NORMAL"}
+          {anomaly.count > 0 ? "Rejected" : "Accepted"}
         </div>
       )}
 

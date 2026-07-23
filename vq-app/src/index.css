@@ -120,10 +120,67 @@ body {
   color: var(--color-vq-text-muted);
 }
 
+@layer utilities {
+  @keyframes part-rejected-animation {
+
+    0%,
+    100% {
+      background-color: var(--destructive);
+      color: var(--color-primary-foreground);
+    }
+
+    50% {
+      background-color: transparent;
+      color: var(--color-foreground);
+    }
+  }
+
+  .animated-part-rejected {
+    animation: part-rejected-animation 0.5s ease-out infinite;
+  }
+
+  @keyframes status-animation {
+    0% {
+      background-position: 0% 50%;
+    }
+
+    100% {
+      background-position: 100% 50%;
+    }
+  }
+
+  .animated-status {
+    background-size: 200% 100%;
+    background-position: 0% 50%;
+    animation: status-animation 3s linear infinite;
+  }
+
+  .status-rejected {
+    background-image: linear-gradient(to right,
+        #85182a,
+        #a11d33,
+        #a71e34,
+        #b21e35,
+        #bd1f36,
+        #c71f37,
+        #da1e37,
+        #e01e37,
+        #85182a,
+        #a11d33,
+        #a71e34,
+        #b21e35,
+        #bd1f36,
+        #c71f37,
+        #da1e37,
+        #e01e37);
+  }
+}
+
 @layer base {
   * {
     @apply border-border outline-ring/50;
   }
+
   body {
     @apply bg-background text-foreground;
   }

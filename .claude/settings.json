@@ -34,7 +34,14 @@
       "Bash(curl -s http://localhost:5176/)",
       "Bash(pkill -f \"vite\")",
       "Bash(curl -s http://localhost:5174/part1.jpg -o /dev/null -w \"%{http_code}\\\\n\")",
-      "Bash(curl -s http://localhost:5174/)"
+      "Bash(curl -s http://localhost:5174/)",
+      "Bash(npm ls *)",
+      "Bash(find / -iname \"chromium-cli*\" 2>/dev/null | head -20)",
+      "Read(//c//**)",
+      "Bash(node -e \"console.log\\(require.resolve\\('playwright'\\)\\)\")",
+      "Bash(kill %1)",
+      "Bash(jobs -l)",
+      "Bash(npx --yes playwright@1.55.0 install chromium --with-deps)"
     ],
     "additionalDirectories": [
       "C:\\repos\\raen-demo\\vq-app\\@\\components\\ui"

@@ -5,7 +5,7 @@ import { useLocation, useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import StatusIndicator from "@/components/StatusIndicator";
 import SummaryCard from "@/components/SummaryCard";
-import WrongTextCard from "@/components/WrongTextCard";
+import TextResult from "@/components/TextResult";
 import CameraView from "@/components/CameraView";
 import {
   startInspection,
@@ -21,6 +21,7 @@ const POLL_INTERVAL_MS = 1500;
 
 type InspectionLocationState = {
   expectedTexts?: string[];
+  part?: { id: string; name: string; photo?: string };
 };
 
 const EMPTY_RESULT: InspectionResult = {
@@ -46,6 +47,12 @@ export default function LiveInspectionPage() {
   const [cameraStatus, setCameraStatus] = useState<"ready" | "waiting" | "detecting" | "not_ready">("waiting");
   const [cameraActive, setCameraActive] = useState(false);
   const [expectedTexts, setExpectedTexts] = useState<string[]>(() => loadExpectedTexts());
+  const [partName, setPartName] = useState<string | undefined>(
+    () => (location.state as InspectionLocationState | null)?.part?.name,
+  );
+  const [partPhoto, setPartPhoto] = useState<string | undefined>(
+    () => (location.state as InspectionLocationState | null)?.part?.photo,
+  );
   const [inspectionTotals, setInspectionTotals] = useState({ total: 0, accepted: 0, rejected: 0 });
   const lastCountedFrameNumber = useRef(0);
   const rejectionHandledRef = useRef(false);
@@ -59,6 +66,12 @@ export default function LiveInspectionPage() {
       saveExpectedTexts(cleaned);
     } else {
       setExpectedTexts(loadExpectedTexts());
+    }
+    if (state?.part?.name) {
+      setPartName(state.part.name);
+    }
+    if (state?.part?.photo) {
+      setPartPhoto(state.part.photo);
     }
   }, [location.state]);
 
@@ -214,18 +227,18 @@ export default function LiveInspectionPage() {
 
   const scanBannerLabel =
     status === "scanning"
-      ? "SCAN STARTED"
+      ? "INSPECTION STARTED"
       : status === "paused"
-        ? "SCAN PAUSED"
+        ? "INSPECTION PAUSED"
         : status === "finished"
-          ? "SCAN FINISHED"
-          : "SCAN IDLE";
+          ? "INSPECTION FINISHED"
+          : "IDLE";
 
   const bannerColorClass =
     status === "scanning"
       ? "bg-vq-green"
       : status === "paused"
-        ? "bg-[#d48806]"
+        ? "bg-[#ff5400]"
         : status === "finished"
           ? "bg-[#4F8EF7]"
           : "bg-[#94a3b8]";
@@ -253,16 +266,12 @@ export default function LiveInspectionPage() {
   );
 
   return (
-    <div className="min-h-full bg-vq-bg">
+    <div className="flex min-h-screen flex-col bg-vq-bg">
       {/* Header */}
-      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-vq-border bg-vq-panel px-6 py-3">
-        <Button
-          variant="ghost"
-          onClick={() => navigate("/")}
-          className="p-0 text-sm text-vq-text"
-        >
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-vq-border bg-vq-panel p-3">
+        <Button variant="outline" onClick={() => navigate("/")} className="text-primary text-lg">
           <ChevronLeft className="h-4 w-4" />
-          Back
+          {partName ? partName : "Change Part"}
         </Button>
 
         <StatusIndicator label="Camera Status" status={cameraStatus} />
@@ -275,68 +284,54 @@ export default function LiveInspectionPage() {
         {scanBannerLabel}
       </div>
 
-      <div className="px-6 pt-5 pb-6">
-        <div className="grid grid-cols-[420px_minmax(0,1fr)] items-start gap-6">
-          {/* Left side */}
-          <div
-            className={`grid min-h-[460px] w-[420px] gap-4 ${
-              missingItems.length > 0 ? "grid-cols-[170px_1fr]" : "grid-cols-[170px]"
-            }`}
-          >
-            <div className="flex flex-col gap-3">
-              <SummaryCard label="Total" value={totalCount} color="var(--vq-text)" />
-              <SummaryCard label="Accepted" value={acceptedCount} color="var(--vq-green)" />
-              <SummaryCard label="Rejected" value={rejectedCount} color="var(--vq-red)" />
+      <div className="flex flex-1 gap-6 px-6 pt-5 pb-6">
+        {/* Left side */}
+        <div className="flex w-44 flex-col gap-6">
+          {partPhoto && (
+            <div>
+              <div className="vq-eyebrow mb-2">Reference Image</div>
+              <img
+                src={partPhoto}
+                alt={partName ?? "Reference part"}
+                className="aspect-4/3 w-full rounded-lg object-cover"
+              />
             </div>
-
-            {missingItems.length > 0 ? (
-              <WrongTextCard items={missingItems} completed={inspectionComplete} />
-            ) : null}
-          </div>
-
-          {/* Right side */}
-          <div className="ml-auto flex h-full w-[850px] flex-col">
-            <div className="vq-eyebrow mb-2.5">Live Camera View</div>
-
-            <CameraView
-              active={cameraActive}
-              capturedImageBase64={result.capturedImageBase64}
-              anomaly={result.anomaly}
-            />
-
-            <div className="mt-[18px] flex w-full justify-center">
-              <div className="flex gap-4">
-                <Button
-                  variant="outline"
-                  disabled={status !== "scanning"}
-                  onClick={handlePause}
-                  className="h-10 w-[140px] text-sm"
-                >
-                  <PauseCircle className="h-4 w-4" />
-                  Pause
-                </Button>
-
-                <Button
-                  disabled={status === "idle"}
-                  onClick={handleFinish}
-                  className="h-10 w-[140px] text-sm"
-                >
-                  <CheckCircle2 className="h-4 w-4" />
-                  Finish
-                </Button>
-
-                <Button
-                  onClick={handleStart}
-                  disabled={status === "scanning"}
-                  className="h-10 w-[140px] border-none bg-vq-green text-sm text-white hover:bg-vq-green-dark"
-                >
-                  <PlayCircle className="h-4 w-4" />
-                  {status === "paused" ? "Resume" : "Start"}
-                </Button>
-              </div>
-            </div>
-          </div>
+          )}
+          <SummaryCard label="Total" value={totalCount} color="var(--color-vq-text)" />
+          <SummaryCard label="Accepted" value={acceptedCount} color="var(--color-vq-green)" />
+          <SummaryCard label="Rejected" value={rejectedCount} color="var(--color-vq-red)" />
         </div>
+
+        <TextResult items={missingItems} completed={inspectionComplete} />
+
+        {/* Right side */}
+        <div className="ml-auto flex h-full w-full flex-col">
+          <div className="vq-eyebrow mb-2">Live Camera View</div>
+
+          <CameraView active={cameraActive} capturedImageBase64={result.capturedImageBase64} anomaly={result.anomaly} />
+        </div>
+      </div>
+
+      <div className="fixed bottom-6 left-6 flex gap-4">
+        <Button variant="secondary" disabled={status !== "scanning"} onClick={handlePause}>
+          <PauseCircle />
+          Pause
+        </Button>
+
+        <Button disabled={status === "idle"} onClick={handleFinish}>
+          <CheckCircle2 />
+          Finish
+        </Button>
+
+        <Button
+          variant="default"
+          onClick={handleStart}
+          disabled={status === "scanning"}
+          className="bg-vq-green hover:bg-vq-green-dark"
+        >
+          <PlayCircle />
+          {status === "paused" ? "Resume" : "Start"}
+        </Button>
       </div>
     </div>
   );

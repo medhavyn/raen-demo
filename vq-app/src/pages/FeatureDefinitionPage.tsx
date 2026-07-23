@@ -55,7 +55,14 @@ export default function FeatureDefinitionPage() {
       return;
     }
 
-    navigate("/inspection", { state: { expectedTexts: cleaned } });
+    navigate("/inspection", {
+      state: {
+        expectedTexts: cleaned,
+        part: selectedPart
+          ? { id: selectedPart.id, name: selectedPart.name, photo: selectedPart.photo }
+          : undefined,
+      },
+    });
   }
 
   return (
@@ -74,7 +81,7 @@ export default function FeatureDefinitionPage() {
       <div className="py-3">
         <Card className="p-6">
           <div className="flex items-center gap-2.5 pb-4">
-            <div className="flex h-9.5 w-9.5 items-center justify-center rounded-[10px] bg-primary text-primary-foreground">
+            <div className="flex h-9.5 w-9.5 items-center justify-center rounded-md bg-primary text-primary-foreground">
               <LayoutGrid className="h-4.5 w-4.5" />
             </div>
             <div className="text-base font-bold">Features</div>

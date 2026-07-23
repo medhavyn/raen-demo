@@ -12,14 +12,14 @@ export default function StatusIndicator({ label, status }: StatusIndicatorProps)
   const labelText = ready ? "Ready" : notReady ? "Not Ready" : detecting ? "Detecting" : "Waiting";
 
   return (
-    <div className="min-w-[140px] rounded-lg border border-[#d9d9d9] bg-white px-3 py-2 shadow-[0_1px_2px_rgba(0,0,0,0.05)]">
-      <div className="text-[10px] font-bold uppercase tracking-[0.08em] text-[#6b7280]">
+    <div className="min-w-35 rounded-md border px-3 py-2 shadow-2xl">
+      <div className="text-[10px] font-bold uppercase tracking-[0.08em] text-muted-foreground">
         {label}
       </div>
 
-      <div className="mt-[5px] flex items-center gap-1.5">
-        <div className={`h-[9px] w-[9px] rounded-full ${dotColor}`} />
-        <span className="text-[13px] font-semibold">{labelText}</span>
+      <div className="mt-1 flex items-center gap-2">
+        <div className={`h-2 w-2 rounded-full ${dotColor}`} />
+        <span className="font-semibold">{labelText}</span>
       </div>
     </div>
   );
