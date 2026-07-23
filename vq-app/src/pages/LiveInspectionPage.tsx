@@ -1,21 +1,21 @@
-import { useEffect, useMemo, useRef, useState, useCallback } from "react";
-import { toast } from "sonner";
-import { ChevronLeft, PauseCircle, PlayCircle, CheckCircle2 } from "lucide-react";
-import { useLocation, useNavigate } from "react-router-dom";
-import { Button } from "@/components/ui/button";
+import CameraView from "@/components/CameraView";
 import StatusIndicator from "@/components/StatusIndicator";
 import SummaryCard from "@/components/SummaryCard";
 import TextResult from "@/components/TextResult";
-import CameraView from "@/components/CameraView";
+import { Button } from "@/components/ui/button";
 import {
-  startInspection,
-  pauseInspection,
-  resumeInspection,
   finishInspection,
   getLatestInspection,
+  pauseInspection,
+  resumeInspection,
+  startInspection,
 } from "@/services/api";
 import type { InspectionResult, ScanStatus } from "@/types/inspection";
 import { loadExpectedTexts, matchExpectedTexts, saveExpectedTexts } from "@/utils/expectedText";
+import { ChevronLeft } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useLocation, useNavigate } from "react-router-dom";
+import { toast } from "sonner";
 
 const POLL_INTERVAL_MS = 1500;
 
@@ -44,7 +44,7 @@ export default function LiveInspectionPage() {
   const navigate = useNavigate();
   const [status, setStatus] = useState<ScanStatus>("idle");
   const [result, setResult] = useState<InspectionResult>(EMPTY_RESULT);
-  const [cameraStatus, setCameraStatus] = useState<"ready" | "waiting" | "detecting" | "not_ready">("waiting");
+  const [cameraStatus, setCameraStatus] = useState<"ready" | "detecting" | "not_ready">("ready");
   const [cameraActive, setCameraActive] = useState(false);
   const [expectedTexts, setExpectedTexts] = useState<string[]>(() => loadExpectedTexts());
   const [partName, setPartName] = useState<string | undefined>(
@@ -127,7 +127,7 @@ export default function LiveInspectionPage() {
               }));
               rejectionHandledRef.current = true;
               setStatus("paused");
-              setCameraStatus("waiting");
+              setCameraStatus("ready");
               stopPolling();
               void pauseInspection().catch(() => {
                 // Keep the current result visible and stop further processing.
@@ -140,7 +140,7 @@ export default function LiveInspectionPage() {
         // Sync frontend status with backend status
         if (backendStatus === "paused") {
           setStatus("paused");
-          setCameraStatus("waiting");
+          setCameraStatus("ready");
           // Keep polling so we can show the frozen frame, but at a slower rate
         } else if (backendStatus === "finished" || backendStatus === "idle") {
           setStatus(backendStatus === "idle" ? "idle" : "finished");
@@ -206,11 +206,12 @@ export default function LiveInspectionPage() {
     try {
       await pauseInspection();
       setStatus("paused");
-      setCameraStatus("waiting");
+      setCameraStatus("ready");
       // Keep polling so we keep showing the latest result
     } catch (err: any) {
       toast.error(err?.response?.data?.error || "Failed to pause inspection");
     }
+    navigate("/")
   }
 
   async function handleFinish() {
@@ -223,6 +224,7 @@ export default function LiveInspectionPage() {
     } catch (err: any) {
       toast.error(err?.response?.data?.error || "Failed to finish inspection");
     }
+    navigate("/")
   }
 
   const scanBannerLabel =
@@ -236,7 +238,7 @@ export default function LiveInspectionPage() {
 
   const bannerColorClass =
     status === "scanning"
-      ? "bg-vq-green"
+      ? "status-active animated-status"
       : status === "paused"
         ? "bg-[#ff5400]"
         : status === "finished"
@@ -266,11 +268,11 @@ export default function LiveInspectionPage() {
   );
 
   return (
-    <div className="flex min-h-screen flex-col bg-vq-bg">
+    <div className="flex min-h-screen flex-col bg-vq-bg gap-0">
       {/* Header */}
-      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-vq-border bg-vq-panel p-3">
-        <Button variant="outline" onClick={() => navigate("/")} className="text-primary text-lg">
-          <ChevronLeft className="h-4 w-4" />
+      <div className="flex flex-wrap items-center justify-between p-2">
+        <Button variant="outline" size="lg" onClick={() => navigate("/")} className="text-primary text-lg">
+          <ChevronLeft className="size-4" />
           {partName ? partName : "Change Part"}
         </Button>
 
@@ -279,7 +281,7 @@ export default function LiveInspectionPage() {
 
       {/* Scan status banner */}
       <div
-        className={`-mt-1.5 py-2 text-center text-sm font-extrabold tracking-[0.08em] text-white ${bannerColorClass}`}
+        className={`py-1 text-center text-sm font-semibold tracking-widest text-primary-foreground ${bannerColorClass}`}
       >
         {scanBannerLabel}
       </div>
@@ -314,12 +316,10 @@ export default function LiveInspectionPage() {
 
       <div className="fixed bottom-6 left-6 flex flex-col gap-4">
         <Button size="lg" variant="secondary" disabled={status !== "scanning"} onClick={handlePause}>
-          <PauseCircle />
           Pause Inspection
         </Button>
 
         <Button size="lg" disabled={status === "idle"} onClick={handleFinish}>
-          <CheckCircle2 />
           Finish Inspection
         </Button>
 
@@ -330,7 +330,6 @@ export default function LiveInspectionPage() {
           disabled={status === "scanning"}
           className="bg-vq-green hover:bg-vq-green-dark"
         >
-          <PlayCircle />
           {status === "paused" ? "Resume" : "Start"} Inspection
         </Button>
       </div>

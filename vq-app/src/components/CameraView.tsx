@@ -32,7 +32,7 @@ export default function CameraView({ active, capturedImageBase64, anomaly }: Cam
       {/* Anomaly status badge */}
       {anomaly && hasImage && (
         <div
-          className={`${anomaly.count > 0 ? "animated-part-rejected": "bg-vq-green"} absolute top-3 left-3 z-10 rounded-md p-3 font-semibold text-primary-foreground backdrop-blur-sm`}
+          className={`${anomaly.count > 0 ? "animated-part-rejected": "bg-vq-green"} absolute top-3 left-3 z-10 rounded-md px-2 py-1 text-lg font-semibold text-primary-foreground backdrop-blur-sm`}
         >
           {anomaly.count > 0 ? "Rejected" : "Accepted"}
         </div>

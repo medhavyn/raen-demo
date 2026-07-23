@@ -1,5 +1,3 @@
-import { XCircle } from "lucide-react";
-import { Card } from "@/components/ui/card";
 import type { WrongTextItem } from "@/types/inspection";
 
 interface TextResultProps {
@@ -14,7 +12,7 @@ export default function TextResult({ items, completed = true }: TextResultProps)
 
       {items.length === 0 ? (
         completed ? (
-          <div className="rounded-md text-vq-green font-semibold text-xl">All labels found.</div>
+          <div className="rounded-md text-vq-green font-semibold">All labels found.</div>
         ) : (
           <div className="text-vq-text-muted">Awaiting inspection results</div>
         )
@@ -23,7 +21,7 @@ export default function TextResult({ items, completed = true }: TextResultProps)
           {items.map((item, idx) => (
             <div
               key={`${item.text}-${idx}`}
-              className="animated-part-rejected flex items-start justify-between gap-3 rounded-md p-3"
+              className="animated-part-rejected flex items-start justify-between gap-3 rounded-md px-2 py-1"
             >
               {item.text}
             </div>

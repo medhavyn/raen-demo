@@ -12,7 +12,7 @@ export default function StatusIndicator({ label, status }: StatusIndicatorProps)
   const labelText = ready ? "Ready" : notReady ? "Not Ready" : detecting ? "Detecting" : "Waiting";
 
   return (
-    <div className="min-w-35 rounded-md border px-3 py-2 shadow-2xl">
+    <div className="min-w-35 rounded-md border px-2 py-2 shadow-2xl">
       <div className="text-[10px] font-bold uppercase tracking-[0.08em] text-muted-foreground">
         {label}
       </div>

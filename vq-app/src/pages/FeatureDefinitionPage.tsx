@@ -1,28 +1,18 @@
-import { useMemo, useState } from "react";
-import { LayoutGrid, Trash2, Plus } from "lucide-react";
-import { toast } from "sonner";
-import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Card } from "@/components/ui/card";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import partsData from "@/data/partsFeatures.json";
+import { LayoutGrid, Plus, Trash2 } from "lucide-react";
+import { useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
+import { toast } from "sonner";
 
 export default function FeatureDefinitionPage() {
   const navigate = useNavigate();
   const [features, setFeatures] = useState<string[]>([]);
   const [selectedPartId, setSelectedPartId] = useState<string | undefined>();
 
-  const selectedPart = useMemo(
-    () => partsData.parts.find((part) => part.id === selectedPartId),
-    [selectedPartId],
-  );
+  const selectedPart = useMemo(() => partsData.parts.find((part) => part.id === selectedPartId), [selectedPartId]);
 
   function handlePartChange(partId: string) {
     const selectedPart = partsData.parts.find((part) => part.id === partId);
@@ -58,9 +48,7 @@ export default function FeatureDefinitionPage() {
     navigate("/inspection", {
       state: {
         expectedTexts: cleaned,
-        part: selectedPart
-          ? { id: selectedPart.id, name: selectedPart.name, photo: selectedPart.photo }
-          : undefined,
+        part: selectedPart ? { id: selectedPart.id, name: selectedPart.name, photo: selectedPart.photo } : undefined,
       },
     });
   }
@@ -104,12 +92,8 @@ export default function FeatureDefinitionPage() {
             </Select>
           </div>
 
-          <div className={`${selectedPartId ? "": "hidden "}mb-5 flex justify-end`}>
-            <Button
-              variant="outline"
-              onClick={addFeature}
-              className="border-dashed text-muted-foreground text-xs"
-            >
+          <div className={`${selectedPartId ? "" : "hidden "}mb-5 flex justify-end`}>
+            <Button variant="outline" onClick={addFeature} className="border-dashed text-muted-foreground text-xs">
               <Plus className="size-4" />
               Add Feature
             </Button>
@@ -132,11 +116,7 @@ export default function FeatureDefinitionPage() {
                     onChange={(e) => updateFeature(idx, e.target.value)}
                     placeholder="Enter feature name"
                   />
-                  <Button
-                    variant="destructive"
-                    size="icon"
-                    onClick={() => deleteFeature(idx)}
-                  >
+                  <Button variant="destructive" size="icon" onClick={() => deleteFeature(idx)}>
                     <Trash2 className="h-4 w-4" />
                   </Button>
                 </div>

@@ -155,6 +155,20 @@ body {
     animation: status-animation 3s linear infinite;
   }
 
+  .status-active {
+    background-image: linear-gradient(to right,
+        #22c55e,
+        #4ade80,
+        #86efac,
+        #6ee7b7,
+        #34d399,
+        #22c55e,
+        #4ade80,
+        #86efac,
+        #6ee7b7,
+        #34d399);
+  }
+
   .status-rejected {
     background-image: linear-gradient(to right,
         #85182a,
