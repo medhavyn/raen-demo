@@ -240,10 +240,10 @@ export default function LiveInspectionPage() {
     status === "scanning"
       ? "status-active animated-status"
       : status === "paused"
-        ? "bg-[#ff5400]"
+        ? "status-paused animated-status"
         : status === "finished"
           ? "bg-[#4F8EF7]"
-          : "bg-[#94a3b8]";
+          : "status-idle animated-status";
 
   const detectedTexts = useMemo(() => result.ocrLines.map((line) => line.text).filter(Boolean), [result.ocrLines]);
   const inspectionComplete = detectedTexts.length > 0;
@@ -251,6 +251,8 @@ export default function LiveInspectionPage() {
     () => matchExpectedTexts(expectedTexts, detectedTexts, inspectionComplete),
     [detectedTexts, expectedTexts, inspectionComplete],
   );
+  console.debug(expectedTexts)
+  console.debug(detectedTexts)
 
   const totalCount = inspectionTotals.total;
   const acceptedCount = inspectionTotals.accepted;

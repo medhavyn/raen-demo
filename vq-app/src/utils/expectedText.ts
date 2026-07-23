@@ -97,6 +97,103 @@ function calculateSimilarity(str1: string, str2: string): number {
   return similarity;
 }
 
+interface DetectedCandidate {
+  raw: string;
+  normalized: string;
+}
+
+function buildNormalizedDetected(detectedTexts: string[]): DetectedCandidate[] {
+  return detectedTexts
+    .flatMap((text) => {
+      const words = text.split(/\s+/).filter(Boolean);
+      // OCR sometimes merges adjacent labels into one string (e.g. "L/N 26").
+      // Treat each whitespace-separated word as its own candidate too, so
+      // individual expected values can still match inside a merged blob.
+      const entries = words.length > 1 ? [text, ...words] : [text];
+      return entries.map((raw) => ({ raw, normalized: normalizeText(raw) }));
+    })
+    .filter((item) => item.normalized.length > 0);
+}
+
+function getConfidence(
+  matchMode: "strict" | "moderate" | "lenient",
+  normalizedExpected: string,
+  normalizedDetected: string,
+): number {
+  if (matchMode === "strict") {
+    // STRICT MODE: Only exact matches (RECOMMENDED)
+    return normalizedDetected === normalizedExpected ? 1.0 : 0;
+  }
+
+  if (matchMode === "moderate") {
+    // MODERATE MODE: Allow 90%+ similarity
+    const similarity = calculateSimilarity(normalizedExpected, normalizedDetected);
+    return similarity >= 0.9 ? similarity : 0;
+  }
+
+  // LENIENT MODE: Substring matching (NOT RECOMMENDED - causes false positives)
+  if (
+    normalizedDetected === normalizedExpected ||
+    normalizedDetected.includes(normalizedExpected) ||
+    normalizedExpected.includes(normalizedDetected)
+  ) {
+    return 0.8;
+  }
+
+  return 0;
+}
+
+interface CandidatePair {
+  expectedIndex: number;
+  detectedIndex: number;
+  confidence: number;
+}
+
+/**
+ * Assign each expected value to at most one detected candidate, and each
+ * detected candidate to at most one expected value (one-to-one). Without
+ * this, duplicate expected values (e.g. two "L/N" entries) could both
+ * independently claim the same single detected occurrence and both report
+ * as "matched" even though only one was actually detected.
+ */
+function greedyOneToOneMatch(
+  expectedTexts: string[],
+  normalizedDetected: DetectedCandidate[],
+  matchMode: "strict" | "moderate" | "lenient",
+): (CandidatePair | null)[] {
+  const normalizedExpectedList = expectedTexts.map(normalizeText);
+
+  const candidates: CandidatePair[] = [];
+  normalizedExpectedList.forEach((normalizedExpected, expectedIndex) => {
+    normalizedDetected.forEach((detected, detectedIndex) => {
+      const confidence = getConfidence(matchMode, normalizedExpected, detected.normalized);
+      if (confidence > 0) {
+        candidates.push({ expectedIndex, detectedIndex, confidence });
+      }
+    });
+  });
+
+  // Highest confidence first; ties broken by detected index for stable results
+  candidates.sort(
+    (a, b) => b.confidence - a.confidence || a.detectedIndex - b.detectedIndex
+  );
+
+  const usedExpected = new Set<number>();
+  const usedDetected = new Set<number>();
+  const assignments: (CandidatePair | null)[] = expectedTexts.map(() => null);
+
+  for (const candidate of candidates) {
+    if (usedExpected.has(candidate.expectedIndex) || usedDetected.has(candidate.detectedIndex)) {
+      continue;
+    }
+    usedExpected.add(candidate.expectedIndex);
+    usedDetected.add(candidate.detectedIndex);
+    assignments[candidate.expectedIndex] = candidate;
+  }
+
+  return assignments;
+}
+
 /**
  * Match with three modes:
  * - "strict": Exact match only (recommended)
@@ -122,61 +219,18 @@ export function matchExpectedTexts(
     }));
   }
 
-  const normalizedDetected = detectedTexts
-    .map((text) => ({
-      raw: text,
-      normalized: normalizeText(text),
-    }))
-    .filter((item) => item.normalized.length > 0);
+  const normalizedDetected = buildNormalizedDetected(detectedTexts);
+  const assignments = greedyOneToOneMatch(expectedTexts, normalizedDetected, matchMode);
 
-  return expectedTexts.map((expectedText) => {
-    const normalizedExpected = normalizeText(expectedText);
-    
-    // Find all potential matches with confidence scores
-    const matchResults = normalizedDetected
-      .map((detected) => {
-        let confidence = 0;
-
-        if (matchMode === "strict") {
-          // STRICT MODE: Only exact matches (RECOMMENDED)
-          if (detected.normalized === normalizedExpected) {
-            confidence = 1.0;
-          }
-        } else if (matchMode === "moderate") {
-          // MODERATE MODE: Allow 90%+ similarity
-          confidence = calculateSimilarity(normalizedExpected, detected.normalized);
-          // Only consider it a match if similarity is >= 0.9 (90%)
-          if (confidence < 0.9) {
-            confidence = 0;
-          }
-        } else if (matchMode === "lenient") {
-          // LENIENT MODE: Substring matching (NOT RECOMMENDED - causes false positives)
-          if (
-            detected.normalized === normalizedExpected ||
-            detected.normalized.includes(normalizedExpected) ||
-            normalizedExpected.includes(detected.normalized)
-          ) {
-            confidence = 0.8;
-          }
-        }
-
-        return {
-          detected,
-          confidence,
-        };
-      })
-      .filter((result) => result.confidence > 0);
-
-    // Sort by confidence and take best match
-    const bestMatch = matchResults.sort(
-      (a, b) => b.confidence - a.confidence
-    )[0];
+  return expectedTexts.map((expectedText, index) => {
+    const assignment = assignments[index];
+    const detected = assignment ? normalizedDetected[assignment.detectedIndex] : null;
 
     return {
       expectedText,
-      status: bestMatch ? "matched" : "missing",
-      detectedText: bestMatch?.detected.raw ?? null,
-      confidence: bestMatch?.confidence ?? 0,
+      status: assignment ? "matched" : "missing",
+      detectedText: detected?.raw ?? null,
+      confidence: assignment?.confidence ?? 0,
     };
   });
 }
@@ -203,74 +257,33 @@ export function matchExpectedTextsWithDebug(
     }));
   }
 
-  const normalizedDetected = detectedTexts
-    .map((text) => ({
-      raw: text,
-      normalized: normalizeText(text),
-    }))
-    .filter((item) => item.normalized.length > 0);
+  const normalizedDetected = buildNormalizedDetected(detectedTexts);
 
   console.log(`[Debug] Matching Mode: ${matchMode}`);
   console.log(`[Debug] Expected texts: ${expectedTexts.length}`);
-  console.log(`[Debug] Detected texts: ${detectedTexts.length}`);
+  console.log(`[Debug] Detected texts: ${detectedTexts.length} (${normalizedDetected.length} candidates after splitting)`);
 
-  return expectedTexts.map((expectedText) => {
+  const assignments = greedyOneToOneMatch(expectedTexts, normalizedDetected, matchMode);
+
+  return expectedTexts.map((expectedText, index) => {
     const normalizedExpected = normalizeText(expectedText);
+    const assignment = assignments[index];
+    const detected = assignment ? normalizedDetected[assignment.detectedIndex] : null;
+
     console.log(`\n[Debug] Matching expected: "${expectedText}" (normalized: "${normalizedExpected}")`);
-
-    // Find all potential matches with confidence scores
-    const matchResults = normalizedDetected
-      .map((detected) => {
-        let confidence = 0;
-
-        if (matchMode === "strict") {
-          if (detected.normalized === normalizedExpected) {
-            confidence = 1.0;
-          }
-        } else if (matchMode === "moderate") {
-          confidence = calculateSimilarity(normalizedExpected, detected.normalized);
-          console.log(
-            `  - Against "${detected.raw}" (normalized: "${detected.normalized}"): similarity = ${confidence.toFixed(2)}`
-          );
-          if (confidence < 0.9) {
-            confidence = 0;
-          }
-        } else if (matchMode === "lenient") {
-          if (
-            detected.normalized === normalizedExpected ||
-            detected.normalized.includes(normalizedExpected) ||
-            normalizedExpected.includes(detected.normalized)
-          ) {
-            confidence = 0.8;
-          }
-        }
-
-        return {
-          detected,
-          confidence,
-        };
-      })
-      .filter((result) => result.confidence > 0);
-
-    const bestMatch = matchResults.sort(
-      (a, b) => b.confidence - a.confidence
-    )[0];
-
-    const result: ExpectedTextMatch = {
-      expectedText,
-      status: bestMatch ? "matched" : "missing",
-      detectedText: bestMatch?.detected.raw ?? null,
-      confidence: bestMatch?.confidence ?? 0,
-    };
-
-    if (bestMatch) {
+    if (assignment && detected) {
       console.log(
-        `  ✓ MATCHED: "${bestMatch.detected.raw}" (confidence: ${bestMatch.confidence.toFixed(2)})`
+        `  ✓ MATCHED: "${detected.raw}" (confidence: ${assignment.confidence.toFixed(2)})`
       );
     } else {
       console.log(`  ✗ NOT MATCHED`);
     }
 
-    return result;
+    return {
+      expectedText,
+      status: assignment ? "matched" : "missing",
+      detectedText: detected?.raw ?? null,
+      confidence: assignment?.confidence ?? 0,
+    };
   });
 }
