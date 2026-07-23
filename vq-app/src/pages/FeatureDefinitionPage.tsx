@@ -60,18 +60,18 @@ export default function FeatureDefinitionPage() {
 
   return (
     <div
-      className="min-h-full p-6"
+      className="min-h-full px-6 py-3"
       style={{
         background:
           "radial-gradient(circle at top left, rgba(21,104,224,0.12) 0%, transparent 38%), radial-gradient(circle at top right, rgba(26,158,74,0.10) 0%, transparent 32%), linear-gradient(180deg, #f8fbff 0%, #f4f7fb 100%)",
       }}
     >
-      <div className="flex items-center gap-3 border-b border-vq-border px-6 py-[18px]">
+      <div className="flex items-center gap-3 py-3">
         <img src="/etavat-logo.svg" alt="etavat" className="h-8 w-auto" />
-        <div className="text-xl font-semibold">Etavat VisionQ Prototype</div>
+        <div className="text-xl font-semibold">Etavat VisionQ Inspection</div>
       </div>
 
-      <div className="p-6">
+      <div className="py-3">
         <Card className="p-6">
           <div className="flex items-center gap-2.5 pb-4">
             <div className="flex h-9.5 w-9.5 items-center justify-center rounded-[10px] bg-primary text-primary-foreground">
