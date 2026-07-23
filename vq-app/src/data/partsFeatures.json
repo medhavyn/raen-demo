@@ -2,7 +2,8 @@
   "parts": [
     {
       "id": "part1",
-      "name": "Part 1",
+      "name": "Crompton",
+      "photo": "/part1.jpg",
       "features": [
         "14","11","12","22","21","24","15","11","18","16","14","12","60","50","70","1","2","3","60","50","70","1","2","3","SET","DIFF",
         "SET","DIFF","UNDER","OVER","Hz","Hz","Hz","Hz","25","21","28","26","24","22","18","15","16","L","L/N","26","25","28","Crompton","PROTECTOR"
@@ -10,7 +11,8 @@
     },
     {
       "id": "part2",
-      "name": "Part 2",
+      "name": "Siemen",
+      "photo": "/part2.jpg",
       "features": [
         "SIEMENS","Reyrolle","PROT.HEALTHY"
         

@@ -29,7 +29,12 @@
       "Bash(node shot.js)",
       "Bash(node shot2.js)",
       "Bash(lsof -ti:5174 -sTCP:LISTEN)",
-      "Bash(xargs -r kill)"
+      "Bash(xargs -r kill)",
+      "Bash(npx tsc *)",
+      "Bash(curl -s http://localhost:5176/)",
+      "Bash(pkill -f \"vite\")",
+      "Bash(curl -s http://localhost:5174/part1.jpg -o /dev/null -w \"%{http_code}\\\\n\")",
+      "Bash(curl -s http://localhost:5174/)"
     ],
     "additionalDirectories": [
       "C:\\repos\\raen-demo\\vq-app\\@\\components\\ui"
