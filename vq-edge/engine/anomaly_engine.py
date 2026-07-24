@@ -3,39 +3,33 @@ import cv2
 import asyncio 
 import gc 
 import torch
+import tempfile 
 import numpy as np
-from torch.utils.data import Dataset, DataLoader
+
 from typing import Dict
 
 from anomalib.models import EfficientAd
 from anomalib.engine import Engine 
+from anomalib.data import PredictDataset 
+from anomalib.pre_processing import PreProcessor
+from anomalib.visualization import ImageVisualizer
+from torchvision.transforms.v2 import Resize 
+from rembg import remove, new_session
+
 
 import pathlib
 pathlib.PosixPath = pathlib.WindowsPath
 
+
 from device_manager import DeviceManager
 
-
-class SingleImageDataset(Dataset):
-    """
-    A custom memory-only dataset to bypass disk I/O completely.
-    Yields exactly the dictionary format expected by Anomalib/Lightning.
-    """
-    def __init__(self, image_rgb: np.ndarray):
-        self.image_rgb = image_rgb
-
-    def __len__(self):
-        return 1
-
-    def __getitem__(self, idx):
-        # Anomalib's prediction pipeline expects a dictionary with an "image" key
-        return {"image": self.image_rgb, "image_path": "in_memory_image.png"}
-
+ANOMALY_IMAGE_SIZE = 256
 
 class AnomalyEngine:
+
     _instance = None 
-    device_manager: DeviceManager
-    models: Dict[str, Dict]
+    device_manager : DeviceManager
+    models : Dict[str, Dict]
 
     def __new__(cls):
         if cls._instance is None:
@@ -49,24 +43,28 @@ class AnomalyEngine:
         return ckpt_path in self.models
     
     def _load_anomaly_model(self, ckpt_path: str):
-        print(f"Loading Anomaly model from {ckpt_path}")
-        
-        # Load directly from checkpoint. This perfectly restores the weights
-        # AND the pre_processor without triggering Lightning duplicate warnings.
-        model = EfficientAd.load_from_checkpoint(ckpt_path)
-        model.eval()
+        """ Load and anomaly detection model from checkpoint path."""
 
-        # Create engine with logging disabled to save inference overhead
-        engine = Engine(logger=False, enable_checkpointing=False)
+        pre_processor = PreProcessor(transform=Resize((ANOMALY_IMAGE_SIZE, ANOMALY_IMAGE_SIZE)))
 
+        model = EfficientAd(
+            teacher_out_channels=384,
+            model_size="medium",
+            pre_processor=pre_processor,
+        )
+
+        engine = Engine()
+
+        print(f"Anomaly model loaded successfully from {ckpt_path}")
         self.models[ckpt_path] = {
-            "engine": engine,
-            "model": model,
-            "ckpt_path": ckpt_path,
+            "engine" : engine,
+            "model" : model,
+            "ckpt_path" : ckpt_path,
         }
-        print("Anomaly model loaded successfully.")
+
 
     def cleanup(self, model_path: str) -> bool:
+        """Unload an anomaly model and clean up resources."""
         try:
             bundle = self.models.pop(model_path, None)
             if bundle and "model" in bundle:
@@ -88,8 +86,9 @@ class AnomalyEngine:
             return False
 
     async def preload_anomaly_model(self, ckpt_path: str) -> bool:
+        """Preload an anomaly model asynchronously so it's ready for inference."""
         try:
-            if not self._is_anomaly_model_ready(ckpt_path):
+            if not self.is_anomaly_model_ready(ckpt_path):
                 await asyncio.to_thread(self._load_anomaly_model, ckpt_path)
             return True
         except Exception as e:
@@ -102,9 +101,10 @@ class AnomalyEngine:
             anomaly_model_path: str,
             anomaly_threshold: float,
             mask_threshold: int,
-            min_area: int,
+            min_area : int,
     ) -> Dict:
-        """Perform anomaly detection on the full image entirely in memory."""
+        """Perfrom anomaly detection on the full image."""
+
         if image_rgb is None:
             print("input image is not provided.")
             return {}
@@ -113,108 +113,128 @@ class AnomalyEngine:
             self._load_anomaly_model(anomaly_model_path)
 
         anomaly_bundle = self.models.get(anomaly_model_path)
+
         if anomaly_bundle is None:
             raise RuntimeError(f"Anomaly model {anomaly_model_path} is not loaded.")
         
         engine = anomaly_bundle["engine"]
         model = anomaly_bundle["model"]
+        ckpt_path = anomaly_bundle["ckpt_path"]
+
+        tmp_path = None 
 
         try: 
-            # Bypass tempfiles! Use the custom memory dataset
-            dataset = SingleImageDataset(image_rgb)
-            dataloader = DataLoader(dataset, batch_size=1, shuffle=False)
+            with tempfile.TemporaryDirectory() as tmp_dir:
+                tmp_path = os.path.join(tmp_dir, "input.png")
+                
+                cv2.imwrite(tmp_path, cv2.cvtColor(image_rgb, cv2.COLOR_RGB2BGR))
 
-            with torch.no_grad():
-                # We omit ckpt_path here because the model is already fully loaded
-                predictions = engine.predict(
-                    model=model,
-                    dataloaders=dataloader,
+                dataset = PredictDataset(path=tmp_path, transform=None)
+
+                with torch.no_grad():
+                    predictions = engine.predict(
+                        model=model,
+                        dataset=dataset,
+                        ckpt_path=ckpt_path,
+                    )
+
+                if len(predictions) == 0:
+                    return {}
+                
+                prediction = predictions[0]
+
+                score = float(prediction.pred_score)
+                label = int(prediction.pred_label)
+
+                # Always compute anomaly map for visualization
+                anomaly_map = prediction.anomaly_map
+                if isinstance(anomaly_map, torch.Tensor):
+                    anomaly_map = anomaly_map.squeeze().cpu().numpy()
+                anomaly_map = cv2.normalize(anomaly_map, None, 0, 255, cv2.NORM_MINMAX).astype(np.uint8)
+                anomaly_map = cv2.resize(
+                    anomaly_map, (image_rgb.shape[1], image_rgb.shape[0]),
+                    interpolation=cv2.INTER_LINEAR,
                 )
 
-            if not predictions or len(predictions) == 0:
-                return {}
-            
-            # Extract the first batch's dictionary
-            prediction = predictions[0]
-
-            # Parse Anomalib v1.0.0 output dictionary structure
-            if isinstance(prediction, dict):
-                score = float(prediction.get("pred_scores", [0.0])[0])
-                label = int(prediction.get("pred_labels", [0])[0])
-                anomaly_map = prediction.get("anomaly_maps", [None])[0]
-            else:
-                score = float(getattr(prediction, "pred_score", 0.0))
-                label = int(getattr(prediction, "pred_label", 0))
-                anomaly_map = getattr(prediction, "anomaly_map", None)
-
-            if anomaly_map is None:
-                print("Warning: Anomaly map missing from prediction output.")
-                return {}
-
-            # Convert map to numpy array and resize back to original dimensions
-            if isinstance(anomaly_map, torch.Tensor):
-                anomaly_map = anomaly_map.squeeze().cpu().numpy()
+                if score < anomaly_threshold:
+                    return {
+                        "label": label,
+                        "score": score,
+                        "mask": anomaly_map,
+                        "results": [],
+                    }
                 
-            anomaly_map = cv2.normalize(anomaly_map, None, 0, 255, cv2.NORM_MINMAX).astype(np.uint8)
-            anomaly_map = cv2.resize(
-                anomaly_map, (image_rgb.shape[1], image_rgb.shape[0]),
-                interpolation=cv2.INTER_LINEAR,
-            )
 
-            # If the anomaly score is under the threshold, return empty results
-            if score < anomaly_threshold:
+
+                _, binary_mask = cv2.threshold(anomaly_map, mask_threshold, 255, cv2.THRESH_BINARY)
+
+                kernel = np.ones((5, 5), np.uint8)
+
+                binary_mask = cv2.morphologyEx(
+                    binary_mask,
+                    cv2.MORPH_OPEN,
+                    kernel,
+                )
+
+                binary_mask = cv2.morphologyEx(
+                    binary_mask,
+                    cv2.MORPH_CLOSE,
+                    kernel,
+                )
+
+                num_labels, labels_im, stats, _ = cv2.connectedComponentsWithStats(
+                    binary_mask,
+                    connectivity=8,
+                )
+
+                anomaly_results = []
+                anomaly_id = 1
+
+                for label in range(1, num_labels):
+                    area = stats[label, cv2.CC_STAT_AREA]
+                    if area < min_area:
+                        continue
+
+                    x = stats[label, cv2.CC_STAT_LEFT]
+                    y = stats[label, cv2.CC_STAT_TOP]
+                    w = stats[label, cv2.CC_STAT_WIDTH]
+                    h = stats[label, cv2.CC_STAT_HEIGHT]
+
+                    anomaly_results.append(
+                        {
+                            "id": anomaly_id,
+                            "name": "anomaly",
+                            "confidence": round(score, 4),
+                            "bbox": [
+                                x,
+                                y,
+                                x + w,
+                                y + h,
+                            ],
+                            "area": float(area),
+                            "mask": labels_im == label,
+                        }
+                    )
+
+                    anomaly_id += 1
+
+                print(f"Anomaly detected with score {score} and label {label}")
+
                 return {
                     "label": label,
                     "score": score,
-                    "mask": anomaly_map,
-                    "results": [],
+                    "mask": binary_mask,
+                    "results": anomaly_results,
                 }
 
-            # Generate binary mask to extract anomaly bounding boxes
-            _, binary_mask = cv2.threshold(anomaly_map, mask_threshold, 255, cv2.THRESH_BINARY)
-
-            kernel = np.ones((5, 5), np.uint8)
-            binary_mask = cv2.morphologyEx(binary_mask, cv2.MORPH_OPEN, kernel)
-            binary_mask = cv2.morphologyEx(binary_mask, cv2.MORPH_CLOSE, kernel)
-
-            num_labels, labels_im, stats, _ = cv2.connectedComponentsWithStats(
-                binary_mask, connectivity=8
-            )
-
-            anomaly_results = []
-            anomaly_id = 1
-
-            for l_idx in range(1, num_labels):
-                area = stats[l_idx, cv2.CC_STAT_AREA]
-                if area < min_area:
-                    continue
-
-                x = stats[l_idx, cv2.CC_STAT_LEFT]
-                y = stats[l_idx, cv2.CC_STAT_TOP]
-                w = stats[l_idx, cv2.CC_STAT_WIDTH]
-                h = stats[l_idx, cv2.CC_STAT_HEIGHT]
-
-                anomaly_results.append({
-                    "id": anomaly_id,
-                    "name": "anomaly",
-                    "confidence": round(score, 4),
-                    "bbox": [x, y, x + w, y + h],
-                    "area": float(area),
-                    "mask": labels_im == l_idx,
-                })
-                anomaly_id += 1
-
-            print(f"Anomaly detected with score {score} and label {label}")
-
-            return {
-                "label": label,
-                "score": score,
-                "mask": binary_mask,
-                "results": anomaly_results,
-            }
-
         except Exception as e:
-            import traceback
-            traceback.print_exc()
             print(f"Error while detecting anomaly: {e}")
             return {}
+
+        finally:
+            if tmp_path and os.path.exists(tmp_path):
+                os.remove(tmp_path)  
+
+                
+            
+        
