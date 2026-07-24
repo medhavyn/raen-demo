@@ -26,7 +26,7 @@ from camera_manager import get_camera
 # ---------------------------------------------------------------------------
 # Runtime configuration
 # ---------------------------------------------------------------------------
-INPUT_SOURCE = "image"  # "camera" | "image"
+INPUT_SOURCE = "camera"  # "camera" | "image"
 
 # --- CAMERA CONFIGURATION ---
 CAMERA_TYPE = "GENICAM"  # Toggle: "UVC" or "GENICAM"
@@ -197,7 +197,8 @@ def _annotate_ocr_lines(image_bgr: np.ndarray, ocr_lines: list[dict[str, Any]]) 
         if normalized_box is None: continue
         try:
             bx1, by1, bx2, by2 = normalized_box
-            cv2.rectangle(annotated, (bx1, by1), (bx2, by2), (0, 255, 0), 2)
+            # Increased thickness from 2 to 8 for 4K visibility
+            cv2.rectangle(annotated, (bx1, by1), (bx2, by2), (0, 255, 0), thickness=8)
         except Exception:
             continue
     return annotated
@@ -260,6 +261,11 @@ def _build_payload(image_bgr: np.ndarray, anomaly_result: dict, part_result: dic
     annotated = image_bgr.copy()
     part_bbox = part_result.get("bbox") if isinstance(part_result, dict) else None
 
+    # --- Draw RF-DETR Part Bounding Box in BLUE ---
+    if part_bbox is not None:
+        px1, py1, px2, py2 = part_bbox
+        cv2.rectangle(annotated, (px1, py1), (px2, py2), (255, 0, 0), thickness=10)
+
     mask = anomaly.get("mask")
     if isinstance(mask, np.ndarray) and mask.size > 0 and anomaly_count > 0:
         if len(mask.shape) == 3: mask = cv2.cvtColor(mask, cv2.COLOR_BGR2GRAY)
@@ -267,7 +273,7 @@ def _build_payload(image_bgr: np.ndarray, anomaly_result: dict, part_result: dic
         binary_mask = mask.astype(np.float32) > 30
         if binary_mask.any():
             detections = sv.Detections(xyxy=np.array([[0, 0, image_w, image_h]], dtype=np.float32), mask=binary_mask[np.newaxis, ...])
-            polygon_annotator = sv.PolygonAnnotator(color=sv.Color.RED, thickness=8, color_lookup=sv.ColorLookup.INDEX)
+            polygon_annotator = sv.PolygonAnnotator(color=sv.Color.RED, thickness=10, color_lookup=sv.ColorLookup.INDEX)
             annotated = polygon_annotator.annotate(scene=annotated, detections=detections)
 
     if ocr_lines and part_bbox is not None:
@@ -302,13 +308,6 @@ def _build_payload(image_bgr: np.ndarray, anomaly_result: dict, part_result: dic
         "boxes": boxes, "ocrLines": frontend_ocr,
         "anomaly": {"label": anomaly_label, "score": anomaly_score, "count": anomaly_count},
         "capturedImageBase64": captured_image_b64,
-    }
-
-def _make_empty_result(error: str | None = None) -> dict[str, Any]:
-    return {
-        "total": 0, "accepted": 0, "rejected": 0, "wrongText": [], "boxes": [], "ocrLines": [],
-        "anomaly": {"label": 0, "score": 0.0, "count": 0},
-        "capturedImageBase64": None, **({"error": error} if error else {})
     }
 
 # ---------------------------------------------------------------------------
