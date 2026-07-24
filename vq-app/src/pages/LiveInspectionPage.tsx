@@ -201,6 +201,7 @@ export default function LiveInspectionPage() {
       }
       setStatus("scanning");
       setCameraStatus("detecting");
+      setCameraActive(true);
       setResult(EMPTY_RESULT);
 
       if (status === "paused") {

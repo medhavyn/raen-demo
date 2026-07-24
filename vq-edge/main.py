@@ -29,7 +29,7 @@ from engine.ocr_engine import OCR_Engine, run_ocr
 INPUT_SOURCE = "image"  # "camera" | "image"
 
 DEMO_IMAGES_DIR = Path(__file__).parent / "demo-images"
-ANOMALY_MODEL_DIR = Path(r"C:\Users\dodhe\OneDrive - Medhavyn Technologies\VisionQ\rangavishwa\ckpt-models")
+MODELS_DIR = Path(__file__).parent / "demo-models"
 
 # Image path per part/condition, e.g. IMAGE_PATHS["crompton"]["good"]
 IMAGE_PATHS: dict[str, dict[str, str]] = {
@@ -53,10 +53,10 @@ IMAGE_PATHS: dict[str, dict[str, str]] = {
 
 # Anomaly model checkpoint per part (shared across good/bad since it's the same part).
 ANOMALY_MODEL_PATHS: dict[str, str] = {
-    "crompton": str(ANOMALY_MODEL_DIR / "crompton_anomaly.ckpt"),
-    "siemens": str(ANOMALY_MODEL_DIR / "siemens_anomaly.ckpt"),
-    "ashida": str(ANOMALY_MODEL_DIR / "ashida_anomaly.ckpt"),
-    "govern": str(ANOMALY_MODEL_DIR / "govern_anomaly.ckpt"),  # placeholder — model not yet available
+    "crompton": str(MODELS_DIR / "crompton_anomaly.ckpt"),
+    "siemens": str(MODELS_DIR / "siemens_anomaly.ckpt"),
+    "ashida": str(MODELS_DIR / "ashida_anomaly.ckpt"),
+    "govern": str(MODELS_DIR / "govern_anomaly.ckpt"),  # placeholder — model not yet available
 }
 
 # --- Toggle just this to switch which demo part/condition is used ---
@@ -67,9 +67,7 @@ IMAGE_PATH: str | None = IMAGE_PATHS[ACTIVE_PART][ACTIVE_CONDITION]
 
 CAMERA_INDEX = 2
 ANOMALY_MODEL_PATH = ANOMALY_MODEL_PATHS[ACTIVE_PART]
-RFDETR_MODEL_PATH = (
-    r"C:\Users\dodhe\OneDrive - Medhavyn Technologies\VisionQ\sushmi\models-rfdetr\suen_0102ES200700N.pth"
-)
+RFDETR_MODEL_PATH = str(MODELS_DIR / "suen_0102ES200700N.pth")
 OCR_MODEL_DIR: str | None = None
 ANOMALY_THRESHOLD = 0.5
 MASK_THRESHOLD = 128
@@ -189,10 +187,12 @@ class InspectionState:
     # --- lifecycle ---
     def start(self) -> None:
         if self._thread and self._thread.is_alive():
-            # Already running — just unpause
-            self._pause_event.set()
-            self.status = "scanning"
-            return
+            # A previous session (possibly a different part) is still alive
+            # (e.g. left paused without finishing) — stop it before starting fresh.
+            self._stop_event.set()
+            self._pause_event.set()  # unblock if paused so it can exit
+            self._thread.join(timeout=5)
+            self._thread = None
 
         self._stop_event.clear()
         self._pause_event.set()
