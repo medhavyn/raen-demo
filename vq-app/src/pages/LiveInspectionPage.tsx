@@ -22,6 +22,7 @@ const POLL_INTERVAL_MS = 1500;
 type InspectionLocationState = {
   expectedTexts?: string[];
   part?: { id: string; name: string; photo?: string };
+  condition?: "good" | "bad";
 };
 
 const EMPTY_RESULT: InspectionResult = {
@@ -53,6 +54,12 @@ export default function LiveInspectionPage() {
   const [partPhoto, setPartPhoto] = useState<string | undefined>(
     () => (location.state as InspectionLocationState | null)?.part?.photo,
   );
+  const [partId, setPartId] = useState<string | undefined>(
+    () => (location.state as InspectionLocationState | null)?.part?.id,
+  );
+  const [condition, setCondition] = useState<"good" | "bad">(
+    () => (location.state as InspectionLocationState | null)?.condition ?? "good",
+  );
   const [inspectionTotals, setInspectionTotals] = useState({ total: 0, accepted: 0, rejected: 0 });
   const lastCountedFrameNumber = useRef(0);
   const rejectionHandledRef = useRef(false);
@@ -72,6 +79,12 @@ export default function LiveInspectionPage() {
     }
     if (state?.part?.photo) {
       setPartPhoto(state.part.photo);
+    }
+    if (state?.part?.id) {
+      setPartId(state.part.id);
+    }
+    if (state?.condition) {
+      setCondition(state.condition);
     }
   }, [location.state]);
 
@@ -173,6 +186,12 @@ export default function LiveInspectionPage() {
       return;
     }
 
+    if (status !== "paused" && !partId) {
+      toast.error("No part selected.");
+      navigate("/");
+      return;
+    }
+
     try {
       rejectionHandledRef.current = false;
 
@@ -189,7 +208,7 @@ export default function LiveInspectionPage() {
         await resumeInspection();
       } else {
         // Fresh start
-        await startInspection();
+        await startInspection(partId!, condition);
       }
 
       // Start polling for results

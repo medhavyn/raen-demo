@@ -50,7 +50,11 @@
       "Bash(npx --yes playwright install chromium)",
       "Bash(python -c \"import supervision as sv; print\\(sv.__version__\\); help\\(sv.PolygonAnnotator.__init__\\)\")",
       "Bash(python -m pip show supervision)",
-      "Bash(./.venv/Scripts/python.exe -c ' *)"
+      "Bash(./.venv/Scripts/python.exe -c ' *)",
+      "Bash(find \"c:/repos/raen-demo\" -iname \"*anomaly*.ckpt\" 2>/dev/null; find \"C:/Users/dodhe/OneDrive - Medhavyn Technologies/VisionQ/rangavishwa/ckpt-models\" -iname \"*.ckpt\" 2>/dev/null)",
+      "Read(//c/Users/dodhe/OneDrive - Medhavyn Technologies/VisionQ/rangavishwa/ckpt-models/**)",
+      "Bash(ls \"C:/Users/dodhe/OneDrive - Medhavyn Technologies/VisionQ/rangavishwa/ckpt-models\" 2>&1)",
+      "Bash(python -c \"import ast; ast.parse\\(open\\('main.py', encoding='utf-8'\\).read\\(\\)\\)\")"
     ],
     "additionalDirectories": [
       "C:\\repos\\raen-demo\\vq-app\\@\\components\\ui"

@@ -11,7 +11,7 @@ export default function CameraView({ active, capturedImageBase64, anomaly }: Cam
 
   return (
     <div
-      className="relative min-h-[420px] w-full flex-1 overflow-hidden rounded-md border border-vq-border"
+      className="relative min-h-105 w-full flex-1 overflow-hidden rounded-md border border-vq-border"
       style={{
         background: hasImage
           ? "#0e131a"

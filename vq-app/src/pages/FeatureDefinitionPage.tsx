@@ -11,6 +11,7 @@ export default function FeatureDefinitionPage() {
   const navigate = useNavigate();
   const [features, setFeatures] = useState<string[]>([]);
   const [selectedPartId, setSelectedPartId] = useState<string | undefined>();
+  const [isGoodCondition, setIsGoodCondition] = useState(true);
 
   const selectedPart = useMemo(() => partsData.parts.find((part) => part.id === selectedPartId), [selectedPartId]);
 
@@ -49,6 +50,7 @@ export default function FeatureDefinitionPage() {
       state: {
         expectedTexts: cleaned,
         part: selectedPart ? { id: selectedPart.id, name: selectedPart.name, photo: selectedPart.photo } : undefined,
+        condition: isGoodCondition ? "good" : "bad",
       },
     });
   }
@@ -124,7 +126,20 @@ export default function FeatureDefinitionPage() {
             </div>
           </div>
 
-          <div className="mt-5 flex gap-3">
+          <div className="mt-5 mb-3 flex items-center gap-2">
+            <input
+              id="good-condition"
+              type="checkbox"
+              checked={isGoodCondition}
+              onChange={(e) => setIsGoodCondition(e.target.checked)}
+              className="size-4"
+            />
+            <label htmlFor="good-condition" className="text-sm font-medium">
+              Use OK part photo
+            </label>
+          </div>
+
+          <div className="flex gap-3">
             <Button
               size="lg"
               disabled={!selectedPartId}

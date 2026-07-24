@@ -13,8 +13,9 @@ import numpy as np
 import supervision as sv
 from rembg import remove, new_session
 import uvicorn
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
 
 from engine.anomaly_engine import AnomalyEngine
 from engine.rfdetr_engine import RFDETREngine
@@ -26,14 +27,46 @@ from engine.ocr_engine import OCR_Engine, run_ocr
 # Runtime configuration
 # ---------------------------------------------------------------------------
 INPUT_SOURCE = "image"  # "camera" | "image"
-IMAGE_PATH: str | None = (
-    r"C:\Users\dodhe\OneDrive - Medhavyn Technologies\VisionQ\rangavishwa\images-not-datasets\crompton\bad\Image_20260716124020557.bmp"
-)
+
+DEMO_IMAGES_DIR = Path(__file__).parent / "demo-images"
+ANOMALY_MODEL_DIR = Path(r"C:\Users\dodhe\OneDrive - Medhavyn Technologies\VisionQ\rangavishwa\ckpt-models")
+
+# Image path per part/condition, e.g. IMAGE_PATHS["crompton"]["good"]
+IMAGE_PATHS: dict[str, dict[str, str]] = {
+    "crompton": {
+        "good": str(DEMO_IMAGES_DIR / "part1-crompton-good.jpg"),
+        "bad": str(DEMO_IMAGES_DIR / "part1-crompton-bad.jpg"),
+    },
+    "siemens": {
+        "good": str(DEMO_IMAGES_DIR / "part2-siemens-good.jpg"),
+        "bad": str(DEMO_IMAGES_DIR / "part2-siemens-bad.jpg"),
+    },
+    "ashida": {
+        "good": str(DEMO_IMAGES_DIR / "part3-ashida-good.jpg"),
+        "bad": str(DEMO_IMAGES_DIR / "part3-ashida-bad.jpg"),
+    },
+    "govern": {
+        "good": str(DEMO_IMAGES_DIR / "part4-govern-good.jpg"),
+        "bad": str(DEMO_IMAGES_DIR / "part4-govern-bad.jpg"),
+    },
+}
+
+# Anomaly model checkpoint per part (shared across good/bad since it's the same part).
+ANOMALY_MODEL_PATHS: dict[str, str] = {
+    "crompton": str(ANOMALY_MODEL_DIR / "crompton_anomaly.ckpt"),
+    "siemens": str(ANOMALY_MODEL_DIR / "siemens_anomaly.ckpt"),
+    "ashida": str(ANOMALY_MODEL_DIR / "ashida_anomaly.ckpt"),
+    "govern": str(ANOMALY_MODEL_DIR / "govern_anomaly.ckpt"),  # placeholder — model not yet available
+}
+
+# --- Toggle just this to switch which demo part/condition is used ---
+ACTIVE_PART = "siemens"  # "crompton" | "siemens" | "ashida" | "govern"
+ACTIVE_CONDITION = "good"  # "good" | "bad"
+
+IMAGE_PATH: str | None = IMAGE_PATHS[ACTIVE_PART][ACTIVE_CONDITION]
 
 CAMERA_INDEX = 2
-ANOMALY_MODEL_PATH = (
-    r"C:\Users\dodhe\OneDrive - Medhavyn Technologies\VisionQ\rangavishwa\ckpt-models\crompton_anomaly.ckpt"
-)
+ANOMALY_MODEL_PATH = ANOMALY_MODEL_PATHS[ACTIVE_PART]
 RFDETR_MODEL_PATH = (
     r"C:\Users\dodhe\OneDrive - Medhavyn Technologies\VisionQ\sushmi\models-rfdetr\suen_0102ES200700N.pth"
 )
@@ -705,11 +738,26 @@ def health() -> dict[str, str]:
     return {"status": "ok", "service": "vq-edge-python-backend"}
 
 
+class InspectStartRequest(BaseModel):
+    partId: str = "crompton"
+    condition: str = "good"
+
+
 @app.post("/inspect/start")
-def inspect_start() -> dict[str, Any]:
+def inspect_start(request: InspectStartRequest) -> dict[str, Any]:
     """Start or resume continuous inspection."""
+    global IMAGE_PATH, ANOMALY_MODEL_PATH
+
     if inspection_state.status == "scanning":
         return {"status": "scanning", "message": "Inspection already running."}
+
+    if request.partId not in IMAGE_PATHS:
+        raise HTTPException(status_code=400, detail=f"Unknown partId: {request.partId}")
+    if request.condition not in IMAGE_PATHS[request.partId]:
+        raise HTTPException(status_code=400, detail=f"Unknown condition: {request.condition}")
+
+    IMAGE_PATH = IMAGE_PATHS[request.partId][request.condition]
+    ANOMALY_MODEL_PATH = ANOMALY_MODEL_PATHS[request.partId]
 
     inspection_state.start()
     return {"status": "scanning", "message": "Inspection started."}

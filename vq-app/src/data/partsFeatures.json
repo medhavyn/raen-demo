@@ -1,9 +1,9 @@
 {
   "parts": [
     {
-      "id": "part1",
+      "id": "crompton",
       "name": "Crompton",
-      "photo": "/part1.jpg",
+      "photo": "/crompton.jpg",
       "features": [
         "14",
         "11",
@@ -57,9 +57,29 @@
       ]
     },
     {
-      "id": "part2",
+      "id": "siemens",
       "name": "Siemens",
-      "photo": "/part2.jpg",
+      "photo": "/siemens.jpg",
+      "features": [
+        "SIEMENS",
+        "Reyrolle",
+        "PROT.HEALTHY"
+      ]
+    },
+    {
+      "id": "ashida",
+      "name": "Ashida",
+      "photo": "/ashida.jpg",
+      "features": [
+        "SIEMENS",
+        "Reyrolle",
+        "PROT.HEALTHY"
+      ]
+    },
+    {
+      "id": "govern",
+      "name": "Govern",
+      "photo": "/govern.jpg",
       "features": [
         "SIEMENS",
         "Reyrolle",
