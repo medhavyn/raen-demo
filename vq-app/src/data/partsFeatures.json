@@ -71,9 +71,18 @@
       "name": "Ashida",
       "photo": "/ashida.jpg",
       "features": [
-        "SIEMENS",
-        "Reyrolle",
-        "PROT.HEALTHY"
+        "ASHIDA",
+        "SELF POWERED PROTECTION RELAY",
+        "PKP",
+        "RESET",
+        "FAULT",
+        "TRIP",
+        "HW",
+        "BAT",
+        "TEST",
+        "RESET",
+        "ON",
+        "ADR241S"
       ]
     },
     {
