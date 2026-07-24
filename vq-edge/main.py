@@ -3,8 +3,6 @@ from __future__ import annotations
 import base64
 import threading
 import time
-import tempfile
-from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -17,55 +15,52 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
+# Import ML Engines (Unchanged)
 from engine.anomaly_engine import AnomalyEngine
 from engine.rfdetr_engine import RFDETREngine
-
-# ✓ FIXED: Import corrected OCR engine and extraction helper
 from engine.ocr_engine import OCR_Engine, run_ocr
+
+# Import the newly abstracted camera manager
+from camera_manager import get_camera
 
 # ---------------------------------------------------------------------------
 # Runtime configuration
 # ---------------------------------------------------------------------------
 INPUT_SOURCE = "image"  # "camera" | "image"
 
+# --- CAMERA CONFIGURATION ---
+CAMERA_TYPE = "GENICAM"  # Toggle: "UVC" or "GENICAM"
+CAMERA_CONFIG = {
+    # UVC Settings
+    "index": 0,
+    "height": 2160,
+    # GenICam (Hikrobot) Settings
+    # Update this path to where MVS installs the .cti file (e.g. MvProducerGEV.cti or MvProducerU3V.cti)
+    "cti_path": r"C:\Program Files (x86)\Common Files\MVS\Runtime\Win64_x64\MvProducerU3V.cti",
+    "serial_number": None # Set to a string if using multiple cameras
+}
+
 DEMO_IMAGES_DIR = Path(__file__).parent / "demo-images"
 MODELS_DIR = Path(__file__).parent / "demo-models"
 
-# Image path per part/condition, e.g. IMAGE_PATHS["crompton"]["good"]
 IMAGE_PATHS: dict[str, dict[str, str]] = {
-    "crompton": {
-        "good": str(DEMO_IMAGES_DIR / "part1-crompton-good.jpg"),
-        "bad": str(DEMO_IMAGES_DIR / "part1-crompton-bad.jpg"),
-    },
-    "siemens": {
-        "good": str(DEMO_IMAGES_DIR / "part2-siemens-good.jpg"),
-        "bad": str(DEMO_IMAGES_DIR / "part2-siemens-bad.jpg"),
-    },
-    "ashida": {
-        "good": str(DEMO_IMAGES_DIR / "part3-ashida-good.jpg"),
-        "bad": str(DEMO_IMAGES_DIR / "part3-ashida-bad.jpg"),
-    },
-    "govern": {
-        "good": str(DEMO_IMAGES_DIR / "part4-govern-good.jpg"),
-        "bad": str(DEMO_IMAGES_DIR / "part4-govern-bad.jpg"),
-    },
+    "crompton": {"good": str(DEMO_IMAGES_DIR / "part1-crompton-good.jpg"), "bad": str(DEMO_IMAGES_DIR / "part1-crompton-bad.jpg")},
+    "siemens": {"good": str(DEMO_IMAGES_DIR / "part2-siemens-good.jpg"), "bad": str(DEMO_IMAGES_DIR / "part2-siemens-bad.jpg")},
+    "ashida": {"good": str(DEMO_IMAGES_DIR / "part3-ashida-good.jpg"), "bad": str(DEMO_IMAGES_DIR / "part3-ashida-bad.jpg")},
+    "govern": {"good": str(DEMO_IMAGES_DIR / "part4-govern-good.jpg"), "bad": str(DEMO_IMAGES_DIR / "part4-govern-bad.jpg")},
 }
 
-# Anomaly model checkpoint per part (shared across good/bad since it's the same part).
 ANOMALY_MODEL_PATHS: dict[str, str] = {
     "crompton": str(MODELS_DIR / "crompton_anomaly.ckpt"),
     "siemens": str(MODELS_DIR / "siemens_anomaly.ckpt"),
     "ashida": str(MODELS_DIR / "ashida_anomaly.ckpt"),
-    "govern": str(MODELS_DIR / "govern_anomaly.ckpt"),  # placeholder — model not yet available
+    "govern": str(MODELS_DIR / "govern_anomaly.ckpt"),
 }
 
-# --- Toggle just this to switch which demo part/condition is used ---
-ACTIVE_PART = "siemens"  # "crompton" | "siemens" | "ashida" | "govern"
-ACTIVE_CONDITION = "good"  # "good" | "bad"
-
+ACTIVE_PART = "siemens" 
+ACTIVE_CONDITION = "good" 
 IMAGE_PATH: str | None = IMAGE_PATHS[ACTIVE_PART][ACTIVE_CONDITION]
 
-CAMERA_INDEX = 2
 ANOMALY_MODEL_PATH = ANOMALY_MODEL_PATHS[ACTIVE_PART]
 RFDETR_MODEL_PATH = str(MODELS_DIR / "suen_0102ES200700N.pth")
 OCR_MODEL_DIR: str | None = None
@@ -77,15 +72,7 @@ OCR_MIN_CONFIDENCE = 0.75
 
 API_HOST = "0.0.0.0"
 API_PORT = 8001
-
-# Camera capture resolution (set to match your camera's native resolution)
-CAMERA_WIDTH = 3840
-CAMERA_HEIGHT = 2160
-
-# How long to wait between successive pipeline runs (seconds).
 LOOP_INTERVAL = 0.5
-
-# Camera capture tuning.
 FOCUS_SETTLE_SECONDS = 1.5
 WARMUP_FRAMES = 10
 
@@ -95,102 +82,40 @@ WARMUP_FRAMES = 10
 rembg_session = new_session()
 app = FastAPI(title="VQ Edge Inspection Backend", version="1.0.0")
 app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    CORSMiddleware, allow_origins=["*"], allow_credentials=True, allow_methods=["*"], allow_headers=["*"],
 )
-
-
-def _flush_buffer(cap: cv2.VideoCapture, n: int = 3) -> None:
-    """Discard buffered frames so the next read is current."""
-    for _ in range(n):
-        cap.grab()
-
-
-def _open_camera(camera_index: int) -> cv2.VideoCapture:
-    """Open the camera with the same Windows-friendly settings as the sample script."""
-    cap = cv2.VideoCapture(camera_index, cv2.CAP_DSHOW)
-    if not cap.isOpened():
-        raise RuntimeError(f"Camera not available (index {camera_index})")
-
-    cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*"MJPG"))
-    cap.set(cv2.CAP_PROP_FRAME_WIDTH, CAMERA_WIDTH)
-    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, CAMERA_HEIGHT)
-    cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
-    cap.set(cv2.CAP_PROP_AUTOFOCUS, 1)
-    return cap
-
-
-def _load_image_frame(image_path: str) -> np.ndarray:
-    """Load a frame directly from disk (no camera/OBS involved)."""
-    frame_bgr = cv2.imread(image_path)
-    if frame_bgr is None:
-        raise RuntimeError(f"Failed to read image from disk: {image_path}")
-    return frame_bgr
-
-
-def _capture_latest_frame(
-    cap: cv2.VideoCapture,
-    settle_seconds: float = FOCUS_SETTLE_SECONDS,
-    warmup_frames: int = WARMUP_FRAMES,
-) -> np.ndarray:
-    """Warm the camera, then return the latest full-resolution frame."""
-    for _ in range(max(0, warmup_frames)):
-        cap.read()
-
-    time.sleep(settle_seconds)
-    _flush_buffer(cap)
-
-    ok, frame_bgr = cap.read()
-    if not ok or frame_bgr is None:
-        raise RuntimeError("Failed to capture a frame from the camera")
-
-    return frame_bgr
-
 
 class InspectionState:
     """Thread-safe state for the continuous inspection loop."""
-
     def __init__(self) -> None:
         self._lock = threading.Lock()
-        self._status: str = "idle"  # idle | scanning | paused | finished
+        self._status: str = "idle" 
         self._latest_result: dict[str, Any] | None = None
         self._thread: threading.Thread | None = None
         self._stop_event = threading.Event()
-        self._pause_event = threading.Event()  # Set = NOT paused (run), Clear = paused
+        self._pause_event = threading.Event() 
         self._pause_event.set()
 
-    # --- status ---
     @property
     def status(self) -> str:
-        with self._lock:
-            return self._status
+        with self._lock: return self._status
 
     @status.setter
     def status(self, value: str) -> None:
-        with self._lock:
-            self._status = value
+        with self._lock: self._status = value
 
-    # --- latest result ---
     @property
     def latest_result(self) -> dict[str, Any] | None:
-        with self._lock:
-            return self._latest_result
+        with self._lock: return self._latest_result
 
     @latest_result.setter
     def latest_result(self, value: dict[str, Any] | None) -> None:
-        with self._lock:
-            self._latest_result = value
+        with self._lock: self._latest_result = value
 
-    # --- lifecycle ---
     def start(self) -> None:
         if self._thread and self._thread.is_alive():
-            # A previous session (possibly a different part) is still alive
-            # (e.g. left paused without finishing) — stop it before starting fresh.
             self._stop_event.set()
-            self._pause_event.set()  # unblock if paused so it can exit
+            self._pause_event.set() 
             self._thread.join(timeout=5)
             self._thread = None
 
@@ -198,7 +123,6 @@ class InspectionState:
         self._pause_event.set()
         self.status = "scanning"
         self.latest_result = None
-
         self._thread = threading.Thread(target=_inspection_loop, args=(self,), daemon=True)
         self._thread.start()
 
@@ -213,7 +137,7 @@ class InspectionState:
 
     def finish(self) -> None:
         self._stop_event.set()
-        self._pause_event.set()  # unblock if paused so thread can exit
+        self._pause_event.set() 
         self.status = "finished"
         if self._thread:
             self._thread.join(timeout=5)
@@ -224,462 +148,213 @@ class InspectionState:
         return self._stop_event.is_set()
 
     def wait_if_paused(self) -> None:
-        """Block until unpaused, or return immediately if not paused."""
         self._pause_event.wait()
-
 
 inspection_state = InspectionState()
 
-
 # ---------------------------------------------------------------------------
-# Image helpers
+# Image & ML helpers (Unchanged Core logic)
 # ---------------------------------------------------------------------------
 def remove_background(image_rgb: np.ndarray):
-    print("Removing background...")
     result_rgba = remove(image_rgb, session=rembg_session)
     alpha = result_rgba[..., 3:4].astype(np.float32) / 255.0
     rgb = result_rgba[..., :3].astype(np.float32)
     background = np.zeros((1, 1, 3), dtype=np.float32)
     result_rgb = (rgb * alpha + background * (1.0 - alpha)).astype(np.uint8)
-    print("Background removal completed.")
     return result_rgba, result_rgb
 
-
 def _normalize_bbox(box: Any, image_w: int, image_h: int) -> tuple[int, int, int, int] | None:
-    """Convert PaddleOCR box formats into a clamped x1, y1, x2, y2 rectangle."""
     try:
         box_array = np.array(box)
-
         if box_array.ndim == 2 and box_array.shape[1] == 2:
-            x1 = int(box_array[:, 0].min())
-            y1 = int(box_array[:, 1].min())
-            x2 = int(box_array[:, 0].max())
-            y2 = int(box_array[:, 1].max())
+            x1, y1 = int(box_array[:, 0].min()), int(box_array[:, 1].min())
+            x2, y2 = int(box_array[:, 0].max()), int(box_array[:, 1].max())
         elif box_array.ndim == 1 and len(box_array) == 4:
             x1, y1, x2, y2 = [int(v) for v in box_array]
         else:
             return None
 
-        x1 = max(0, min(x1, image_w))
-        y1 = max(0, min(y1, image_h))
-        x2 = max(0, min(x2, image_w))
-        y2 = max(0, min(y2, image_h))
-
-        if x2 <= x1 or y2 <= y1:
-            return None
-
+        x1, y1 = max(0, min(x1, image_w)), max(0, min(y1, image_h))
+        x2, y2 = max(0, min(x2, image_w)), max(0, min(y2, image_h))
+        if x2 <= x1 or y2 <= y1: return None
         return x1, y1, x2, y2
     except Exception:
         return None
 
-
 def _encode_image_to_base64_png(image: np.ndarray | None) -> str | None:
-    if image is None or image.size == 0:
-        return None
+    if image is None or image.size == 0: return None
     ok, encoded = cv2.imencode(".png", image)
-    if not ok:
-        return None
-    return base64.b64encode(encoded.tobytes()).decode("ascii")
+    return base64.b64encode(encoded.tobytes()).decode("ascii") if ok else None
 
-
-# ---------------------------------------------------------------------------
-# OCR annotation helper
-# ---------------------------------------------------------------------------
 def _annotate_ocr_lines(image_bgr: np.ndarray, ocr_lines: list[dict[str, Any]]) -> np.ndarray:
-    """
-    Draw green bounding boxes and text labels on the image for each OCR detection.
-
-    Args:
-        image_bgr: Input image in BGR format (will be copied before modification)
-        ocr_lines: List of OCR results from extract_ocr_lines() with 'text' and 'box' keys
-
-    Returns:
-        Annotated image with drawn boxes and text labels
-    """
     annotated = image_bgr.copy()
-
-    if not ocr_lines:
-        return annotated
-
+    if not ocr_lines: return annotated
     img_h, img_w = annotated.shape[:2]
 
     for line in ocr_lines:
-        text = line.get("text", "")
         box = line.get("box")
-        score = line.get("score")
-
         normalized_box = _normalize_bbox(box, img_w, img_h)
-        if normalized_box is None:
-            continue
-
+        if normalized_box is None: continue
         try:
             bx1, by1, bx2, by2 = normalized_box
-
-            # Draw green rectangle around detected text
             cv2.rectangle(annotated, (bx1, by1), (bx2, by2), (0, 255, 0), 2)
-
-        except Exception as e:
-            print(f"[OCR Annotation] Error drawing box {box}: {e}")
+        except Exception:
             continue
-
     return annotated
 
-
-def _ocr_lines_to_boxes(
-    ocr_lines: list[dict[str, Any]],
-    image_w: int,
-    image_h: int,
-    part_bbox: tuple[int, int, int, int] | None = None,
-) -> list[dict[str, Any]]:
-    """
-    Convert OCR lines to box format with coordinates relative to original frame.
-
-    Args:
-        ocr_lines: List of OCR results (with coordinates relative to crop if part_bbox provided)
-        image_w: Width of the display image (original frame or crop)
-        image_h: Height of the display image (original frame or crop)
-        part_bbox: (x1, y1, x2, y2) offset if ocr_lines are in crop space, else None
-    """
-    boxes: list[dict[str, Any]] = []
-
+def _ocr_lines_to_boxes(ocr_lines: list[dict[str, Any]], image_w: int, image_h: int, part_bbox: tuple[int, int, int, int] | None = None) -> list[dict[str, Any]]:
+    boxes = []
     for idx, line in enumerate(ocr_lines):
         normalized_box = _normalize_bbox(line.get("box"), image_w, image_h)
-        if normalized_box is None:
-            continue
-
+        if normalized_box is None: continue
         x1, y1, x2, y2 = normalized_box
 
-        # If we have a part_bbox offset, add it to convert from crop coords to original coords
         if part_bbox is not None:
             px1, py1, _, _ = part_bbox
-            x1 += px1
-            y1 += py1
-            x2 += px1
-            y2 += py1
+            x1 += px1; y1 += py1; x2 += px1; y2 += py1
 
-        boxes.append(
-            {
-                "id": f"ocr-{idx + 1}",
-                "text": line.get("text", ""),
-                "status": "correct",
-                "top": (y1 / image_h) * 100.0 if image_h > 0 else 0.0,
-                "left": (x1 / image_w) * 100.0 if image_w > 0 else 0.0,
-                "width": ((x2 - x1) / image_w) * 100.0 if image_w > 0 else 0.0,
-                "height": ((y2 - y1) / image_h) * 100.0 if image_h > 0 else 0.0,
-            }
-        )
-
+        boxes.append({
+            "id": f"ocr-{idx + 1}",
+            "text": line.get("text", ""),
+            "status": "correct",
+            "top": (y1 / image_h) * 100.0 if image_h > 0 else 0.0,
+            "left": (x1 / image_w) * 100.0 if image_w > 0 else 0.0,
+            "width": ((x2 - x1) / image_w) * 100.0 if image_w > 0 else 0.0,
+            "height": ((y2 - y1) / image_h) * 100.0 if image_h > 0 else 0.0,
+        })
     return boxes
 
-
-def _build_ocr_focus_image(
-    crop_bgr: np.ndarray,
-    ocr_lines: list[dict[str, Any]],
-    min_display_side: int = 900,
-    margin_ratio: float = 0.12,
-) -> np.ndarray:
-    """Crop the image to the OCR text region and upscale it only for display if needed."""
-    if crop_bgr.size == 0:
-        return crop_bgr
-
-    focus = crop_bgr
-    h, w = focus.shape[:2]
-
-    if ocr_lines:
-        boxes: list[tuple[int, int, int, int]] = []
-        for line in ocr_lines:
-            normalized = _normalize_bbox(line.get("box"), w, h)
-            if normalized is not None:
-                boxes.append(normalized)
-
-        if boxes:
-            x1 = min(box[0] for box in boxes)
-            y1 = min(box[1] for box in boxes)
-            x2 = max(box[2] for box in boxes)
-            y2 = max(box[3] for box in boxes)
-
-            pad_x = max(8, int((x2 - x1) * margin_ratio))
-            pad_y = max(8, int((y2 - y1) * margin_ratio))
-
-            x1 = max(0, x1 - pad_x)
-            y1 = max(0, y1 - pad_y)
-            x2 = min(w, x2 + pad_x)
-            y2 = min(h, y2 + pad_y)
-
-            if x2 > x1 and y2 > y1:
-                focus = focus[y1:y2, x1:x2]
-
-    focus_h, focus_w = focus.shape[:2]
-    if max(focus_h, focus_w) < min_display_side:
-        scale = min_display_side / max(1, max(focus_h, focus_w))
-        new_w = int(round(focus_w * scale))
-        new_h = int(round(focus_h * scale))
-        focus = cv2.resize(focus, (new_w, new_h), interpolation=cv2.INTER_CUBIC)
-
-    return focus
-
-
-# ---------------------------------------------------------------------------
-# Pipeline: single frame
-# ---------------------------------------------------------------------------
 def run_single_frame(
-    frame_bgr: np.ndarray,
-    anomaly_model_path: str,
-    rfdetr_model_path: str,
-    ocr_model_dir: str | None = None,
-    anomaly_threshold: float = 0.5,
-    mask_threshold: int = 128,
-    min_area: int = 50,
-    rfdetr_threshold: float = 0.7,
+    frame_bgr: np.ndarray, anomaly_model_path: str, rfdetr_model_path: str, ocr_model_dir: str | None = None,
+    anomaly_threshold: float = 0.5, mask_threshold: int = 128, min_area: int = 50, rfdetr_threshold: float = 0.7,
 ) -> dict[str, Any]:
-    """Run the full pipeline on a single captured frame"""
     image_rgb = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGB)
-
-    # Step 1: Remove background
     _, image_rgb_no_bg = remove_background(image_rgb)
 
-    # Step 2: Anomaly detection on bg-removed image
     anomaly_engine = AnomalyEngine()
     anomaly_result = anomaly_engine._detect_anomaly(
-        image_rgb=image_rgb_no_bg,
-        anomaly_model_path=anomaly_model_path,
-        anomaly_threshold=anomaly_threshold,
-        mask_threshold=mask_threshold,
-        min_area=min_area,
+        image_rgb=image_rgb_no_bg, anomaly_model_path=anomaly_model_path,
+        anomaly_threshold=anomaly_threshold, mask_threshold=mask_threshold, min_area=min_area,
     )
 
-    # Step 3: Part detection (RF-DETR) on original frame
-    rfdetr_engine = RFDETREngine(
-        model_path=rfdetr_model_path,
-        threshold=rfdetr_threshold,
-    )
+    rfdetr_engine = RFDETREngine(model_path=rfdetr_model_path, threshold=rfdetr_threshold)
     part_result = rfdetr_engine.detect_part(frame_bgr)
 
-    # Step 4: OCR on cropped part
-    # ✓ FIXED: Use corrected OCR engine with proper configuration
     ocr_lines = []
-    if part_result is not None:
-        crop_bgr = part_result["crop"]
-        crop_rgb = cv2.cvtColor(crop_bgr, cv2.COLOR_BGR2RGB)
-        if crop_bgr.size > 0:
-            ocr_engine = OCR_Engine(model_dir=ocr_model_dir, device="gpu:0")
-            ocr_result = run_ocr(crop_rgb, ocr_engine)
-            ocr_lines = ocr_result["lines"]
+    if part_result is not None and part_result.get("crop", np.array([])).size > 0:
+        crop_rgb = cv2.cvtColor(part_result["crop"], cv2.COLOR_BGR2RGB)
+        ocr_engine = OCR_Engine(model_dir=ocr_model_dir, device="gpu:0")
+        ocr_result = run_ocr(crop_rgb, ocr_engine)
+        ocr_lines = ocr_result["lines"]
 
-            # Debug: log the extracted OCR lines
-            print(f"[Pipeline] Extracted {len(ocr_lines)} OCR lines from crop")
-            for i, line in enumerate(ocr_lines):
-                print(f"  Line {i}: text='{line['text']}', box={line.get('box')}, score={line.get('score'):.3f}")
-
-    # Build the response payload
     return _build_payload(frame_bgr, anomaly_result, part_result, ocr_lines)
 
-
-def _build_payload(
-    image_bgr: np.ndarray,
-    anomaly_result: dict,
-    part_result: dict | None,
-    ocr_lines: list[dict[str, Any]],  # ✓ FIXED: Now expects structured list
-) -> dict[str, Any]:
-    """
-    Build a JSON-serialisable payload from pipeline results.
-
-    The displayed image is the **original full frame** with:
-      - Anomaly heatmap overlay (when anomaly detected)
-      - Green bounding boxes around each OCR-detected text region with labels
-    """
+def _build_payload(image_bgr: np.ndarray, anomaly_result: dict, part_result: dict | None, ocr_lines: list[dict[str, Any]]) -> dict[str, Any]:
     image_h, image_w = image_bgr.shape[:2]
-
     anomaly = anomaly_result or {}
     anomaly_results = anomaly.get("results") or []
     anomaly_count = len(anomaly_results)
     anomaly_score = float(anomaly.get("score", 0.0) or 0.0)
     anomaly_label = int(anomaly.get("label", 0) or 0)
 
-    # ---- Build the annotated original image ----
     annotated = image_bgr.copy()
-    part_bbox = None
+    part_bbox = part_result.get("bbox") if isinstance(part_result, dict) else None
 
-    if isinstance(part_result, dict):
-        part_bbox = part_result.get("bbox")  # (x1, y1, x2, y2) in full-frame coords
-
-    print(
-        f"[Build Payload] Original frame size: {image_w}x{image_h}, Anomaly count: {anomaly_count}, OCR lines: {len(ocr_lines)}"
-    )
-
-    # --- Anomaly outline on original frame (only when anomaly detected) ---
     mask = anomaly.get("mask")
     if isinstance(mask, np.ndarray) and mask.size > 0 and anomaly_count > 0:
-        print("[Build Payload] Drawing anomaly outline on original frame...")
-        if len(mask.shape) == 3:
-            mask = cv2.cvtColor(mask, cv2.COLOR_BGR2GRAY)
-        if mask.shape[:2] != (image_h, image_w):
-            mask = cv2.resize(mask, (image_w, image_h), interpolation=cv2.INTER_LINEAR)
-
+        if len(mask.shape) == 3: mask = cv2.cvtColor(mask, cv2.COLOR_BGR2GRAY)
+        if mask.shape[:2] != (image_h, image_w): mask = cv2.resize(mask, (image_w, image_h), interpolation=cv2.INTER_LINEAR)
         binary_mask = mask.astype(np.float32) > 30
         if binary_mask.any():
-            detections = sv.Detections(
-                xyxy=np.array([[0, 0, image_w, image_h]], dtype=np.float32),
-                mask=binary_mask[np.newaxis, ...],
-            )
+            detections = sv.Detections(xyxy=np.array([[0, 0, image_w, image_h]], dtype=np.float32), mask=binary_mask[np.newaxis, ...])
             polygon_annotator = sv.PolygonAnnotator(color=sv.Color.RED, thickness=8, color_lookup=sv.ColorLookup.INDEX)
             annotated = polygon_annotator.annotate(scene=annotated, detections=detections)
 
-    # --- ✓ FIXED: Draw green bounding boxes for OCR text on original frame ---
     if ocr_lines and part_bbox is not None:
-        print(f"[Build Payload] Drawing {len(ocr_lines)} OCR bounding boxes on original frame...")
-
-        # Adjust OCR boxes from crop coordinates to original frame coordinates
-        crop_h, crop_w = None, None
-        if isinstance(part_result, dict) and part_result.get("crop") is not None:
-            crop_h, crop_w = part_result["crop"].shape[:2]
-
         adjusted_ocr_lines = []
         px1, py1, _, _ = part_bbox
-
         for line in ocr_lines:
             adj_line = line.copy()
             box = line.get("box")
-
-            # Convert box coordinates from crop space to original frame space
             if box is not None:
-                try:
-                    box_array = np.array(box)
-                    if box_array.ndim == 2 and box_array.shape[1] == 2:
-                        # Polygon format: add offset to all points
-                        box_array[:, 0] += px1
-                        box_array[:, 1] += py1
-                        adj_line["box"] = box_array.tolist()
-                    elif box_array.ndim == 1 and len(box_array) == 4:
-                        # [x1, y1, x2, y2] format
-                        adj_line["box"] = [
-                            box_array[0] + px1,
-                            box_array[1] + py1,
-                            box_array[2] + px1,
-                            box_array[3] + py1,
-                        ]
-                except Exception as e:
-                    print(f"[Build Payload] Error adjusting box: {e}")
-
+                box_array = np.array(box)
+                if box_array.ndim == 2 and box_array.shape[1] == 2:
+                    box_array[:, 0] += px1
+                    box_array[:, 1] += py1
+                    adj_line["box"] = box_array.tolist()
+                elif box_array.ndim == 1 and len(box_array) == 4:
+                    adj_line["box"] = [box_array[0] + px1, box_array[1] + py1, box_array[2] + px1, box_array[3] + py1]
             adjusted_ocr_lines.append(adj_line)
-
-        # Draw on the full-size frame
         annotated = _annotate_ocr_lines(annotated, adjusted_ocr_lines)
-    else:
-        if ocr_lines:
-            print("[Build Payload] OCR lines exist but no part_bbox to adjust coordinates")
-        else:
-            print("[Build Payload] No OCR lines to annotate")
 
-    # Convert boxes to percentages based on original frame dimensions
     boxes = _ocr_lines_to_boxes(ocr_lines, image_w, image_h, part_bbox=part_bbox)
-
-    # Encode the full original frame with annotations
     captured_image_b64 = _encode_image_to_base64_png(annotated)
-    print("[Build Payload] Annotated original frame encoded to PNG and base64")
 
-    # ---- Compute summary stats ----
-    total = len(ocr_lines)
-    if total == 0 and anomaly_count > 0:
-        total = anomaly_count
+    total = len(ocr_lines) or anomaly_count
     rejected = min(total, anomaly_count) if total > 0 else anomaly_count
     accepted = max(0, total - rejected)
 
-    wrong_text = []
-    if anomaly_count > 0:
-        wrong_text.append(
-            {
-                "text": "Anomaly region detected",
-                "reason": f"score={anomaly_score:.3f}",
-            }
-        )
-
-    # Strip internal box coords before sending to frontend
-    # ✓ FIXED: Keep only text and score, remove box from frontend payload
+    wrong_text = [{"text": "Anomaly region detected", "reason": f"score={anomaly_score:.3f}"}] if anomaly_count > 0 else []
     frontend_ocr = [{"text": l["text"], "score": l.get("score")} for l in ocr_lines]
 
     return {
-        "total": total,
-        "accepted": accepted,
-        "rejected": rejected,
-        "wrongText": wrong_text,
-        "boxes": boxes,
-        "ocrLines": frontend_ocr,
-        "anomaly": {
-            "label": anomaly_label,
-            "score": anomaly_score,
-            "count": anomaly_count,
-        },
+        "total": total, "accepted": accepted, "rejected": rejected, "wrongText": wrong_text,
+        "boxes": boxes, "ocrLines": frontend_ocr,
+        "anomaly": {"label": anomaly_label, "score": anomaly_score, "count": anomaly_count},
         "capturedImageBase64": captured_image_b64,
     }
 
-
 def _make_empty_result(error: str | None = None) -> dict[str, Any]:
-    result: dict[str, Any] = {
-        "total": 0,
-        "accepted": 0,
-        "rejected": 0,
-        "wrongText": [],
-        "boxes": [],
-        "ocrLines": [],
-        "anomaly": {
-            "label": 0,
-            "score": 0.0,
-            "count": 0,
-        },
-        "capturedImageBase64": None,
+    return {
+        "total": 0, "accepted": 0, "rejected": 0, "wrongText": [], "boxes": [], "ocrLines": [],
+        "anomaly": {"label": 0, "score": 0.0, "count": 0},
+        "capturedImageBase64": None, **({"error": error} if error else {})
     }
-    if error:
-        result["error"] = error
-    return result
-
 
 # ---------------------------------------------------------------------------
-# Continuous inspection loop (runs in a background thread)
+# Continuous inspection loop
 # ---------------------------------------------------------------------------
 def _inspection_loop(state: InspectionState) -> None:
-    """
-    Continuously capture frames and run the ML pipeline until stopped.
-
-    The camera stays open for the entire session (no open/close per frame).
-    """
     use_camera = INPUT_SOURCE == "camera"
-    cap: cv2.VideoCapture | None = None
+    cam = None
 
     if use_camera:
-        print(f"[Inspection Loop] Opening camera index {CAMERA_INDEX}...")
+        print(f"[Inspection Loop] Opening {CAMERA_TYPE} camera...")
         try:
-            cap = _open_camera(CAMERA_INDEX)
+            cam = get_camera(CAMERA_TYPE, CAMERA_CONFIG)
+            cam.open()
+            
+            # Warm up logic
+            print(f"[Inspection Loop] Warming up {CAMERA_TYPE} camera...")
+            for _ in range(WARMUP_FRAMES):
+                cam.read()
+            if CAMERA_TYPE == "UVC":
+                time.sleep(FOCUS_SETTLE_SECONDS)
+                
         except RuntimeError as exc:
-            error_msg = str(exc)
-            print(f"[Inspection Loop] {error_msg}")
-            state.latest_result = _make_empty_result(error=error_msg)
+            print(f"[Inspection Loop] Camera init error: {exc}")
+            state.latest_result = _make_empty_result(error=str(exc))
             state.status = "idle"
             return
-
     else:
         if not IMAGE_PATH:
-            error_msg = "INPUT_SOURCE is 'image' but IMAGE_PATH is not set"
-            print(f"[Inspection Loop] {error_msg}")
-            state.latest_result = _make_empty_result(error=error_msg)
+            state.latest_result = _make_empty_result(error="IMAGE_PATH is not set")
             state.status = "idle"
             return
-        print(f"[Inspection Loop] Reading frames from image file: {IMAGE_PATH}")
 
     frame_count = 0
-
     try:
         while not state.should_stop:
-            # Block here if paused
             state.wait_if_paused()
-            if state.should_stop:
-                break
+            if state.should_stop: break
 
             try:
                 if use_camera:
-                    frame_bgr = _capture_latest_frame(cap)
+                    frame_bgr = cam.read()
+                    if frame_bgr is None: raise RuntimeError("Failed to capture frame")
                 else:
-                    frame_bgr = _load_image_frame(IMAGE_PATH)
+                    frame_bgr = cv2.imread(IMAGE_PATH)
+                    if frame_bgr is None: raise RuntimeError("Failed to read image from disk")
             except RuntimeError as exc:
                 print(f"[Inspection Loop] {exc}")
                 time.sleep(0.5)
@@ -690,43 +365,31 @@ def _inspection_loop(state: InspectionState) -> None:
 
             try:
                 result = run_single_frame(
-                    frame_bgr=frame_bgr,
-                    anomaly_model_path=ANOMALY_MODEL_PATH,
-                    rfdetr_model_path=RFDETR_MODEL_PATH,
-                    ocr_model_dir=OCR_MODEL_DIR,
-                    anomaly_threshold=ANOMALY_THRESHOLD,
-                    mask_threshold=MASK_THRESHOLD,
-                    min_area=MIN_AREA,
-                    rfdetr_threshold=RFDETR_THRESHOLD,
+                    frame_bgr=frame_bgr, anomaly_model_path=ANOMALY_MODEL_PATH,
+                    rfdetr_model_path=RFDETR_MODEL_PATH, ocr_model_dir=OCR_MODEL_DIR,
+                    anomaly_threshold=ANOMALY_THRESHOLD, mask_threshold=MASK_THRESHOLD,
+                    min_area=MIN_AREA, rfdetr_threshold=RFDETR_THRESHOLD,
                 )
                 result["frameNumber"] = frame_count
                 state.latest_result = result
 
-                # Check if anomaly/wrong part detected
-                anomaly_count = result.get("anomaly", {}).get("count", 0)
-                if anomaly_count > 0:
-                    print(f"[Inspection Loop] ⚠ Anomaly detected on frame #{frame_count}! " f"Pausing for review.")
+                if result.get("anomaly", {}).get("count", 0) > 0:
+                    print(f"[Inspection Loop] ⚠ Anomaly detected on frame #{frame_count}! Pausing.")
                     state.status = "paused"
                     state._pause_event.clear()
-                    # Don't break — user can resume after reviewing
 
             except Exception as exc:
-                print(f"[Inspection Loop] Pipeline error on frame #{frame_count}: {exc}")
                 import traceback
-
-                traceback.print_exc()  # ✓ FIXED: Added traceback for debugging
+                traceback.print_exc()
                 error_result = _make_empty_result(error=f"Pipeline error: {exc}")
-                # Encode the raw frame so the user can at least see what was captured
                 error_result["capturedImageBase64"] = _encode_image_to_base64_png(frame_bgr)
                 error_result["frameNumber"] = frame_count
                 state.latest_result = error_result
 
-            # Small delay between frames so we don't spin the GPU at 100%
             time.sleep(LOOP_INTERVAL)
-
     finally:
-        if cap is not None:
-            cap.release()
+        if cam is not None:
+            cam.close()
         print(f"[Inspection Loop] Processed {frame_count} frames total.")
 
 
@@ -737,62 +400,39 @@ def _inspection_loop(state: InspectionState) -> None:
 def health() -> dict[str, str]:
     return {"status": "ok", "service": "vq-edge-python-backend"}
 
-
 class InspectStartRequest(BaseModel):
     partId: str = "crompton"
     condition: str = "good"
 
-
 @app.post("/inspect/start")
 def inspect_start(request: InspectStartRequest) -> dict[str, Any]:
-    """Start or resume continuous inspection."""
     global IMAGE_PATH, ANOMALY_MODEL_PATH
-
     if inspection_state.status == "scanning":
         return {"status": "scanning", "message": "Inspection already running."}
 
-    if request.partId not in IMAGE_PATHS:
-        raise HTTPException(status_code=400, detail=f"Unknown partId: {request.partId}")
-    if request.condition not in IMAGE_PATHS[request.partId]:
-        raise HTTPException(status_code=400, detail=f"Unknown condition: {request.condition}")
-
-    IMAGE_PATH = IMAGE_PATHS[request.partId][request.condition]
-    ANOMALY_MODEL_PATH = ANOMALY_MODEL_PATHS[request.partId]
-
+    IMAGE_PATH = IMAGE_PATHS.get(request.partId, {}).get(request.condition)
+    ANOMALY_MODEL_PATH = ANOMALY_MODEL_PATHS.get(request.partId)
     inspection_state.start()
     return {"status": "scanning", "message": "Inspection started."}
 
-
 @app.post("/inspect/pause")
 def inspect_pause() -> dict[str, Any]:
-    """Pause continuous inspection (camera stays open)."""
     inspection_state.pause()
     return {"status": "paused"}
 
-
 @app.post("/inspect/resume")
 def inspect_resume() -> dict[str, Any]:
-    """Resume a paused inspection."""
     inspection_state.resume()
     return {"status": "scanning", "message": "Inspection resumed."}
 
-
 @app.post("/inspect/finish")
 def inspect_finish() -> dict[str, Any]:
-    """Stop inspection and release the camera."""
     inspection_state.finish()
     return {"status": "finished"}
 
-
 @app.get("/inspect/latest")
 def inspect_latest() -> dict[str, Any]:
-    """Return the latest inspection result and current status."""
-    result = inspection_state.latest_result
-    return {
-        "status": inspection_state.status,
-        "result": result,
-    }
-
+    return {"status": inspection_state.status, "result": inspection_state.latest_result}
 
 if __name__ == "__main__":
     uvicorn.run("main:app", host=API_HOST, port=API_PORT, reload=False)
