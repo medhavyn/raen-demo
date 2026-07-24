@@ -43,8 +43,13 @@ class AnomalyEngine:
         return ckpt_path in self.models
     
     def _load_anomaly_model(self, ckpt_path: str):
-        """ Load and anomaly detection model from checkpoint path."""
-
+        """Load an anomaly detection model from checkpoint path.
+        
+        PyTorch 2.6+ enforces weights_only=True by default. Checkpoints with custom
+        preprocessing transforms require fallback to weights_only=False for internal models.
+        """
+        print(f"Loading Anomaly model from {ckpt_path}")
+        
         pre_processor = PreProcessor(transform=Resize((ANOMALY_IMAGE_SIZE, ANOMALY_IMAGE_SIZE)))
 
         model = EfficientAd(
@@ -52,6 +57,19 @@ class AnomalyEngine:
             model_size="medium",
             pre_processor=pre_processor,
         )
+
+        # PyTorch 2.6+ weights_only checkpoint loading
+        try:
+            # Try loading normally first
+            model.load_state_dict(torch.load(ckpt_path, map_location="cpu")["state_dict"])
+        except Exception as e:
+            if "Weights only load failed" in str(e) or "UnpicklingError" in str(e):
+                print(f"[INFO] Loading checkpoint with weights_only=False (trusted internal model)")
+                # Fallback: load with weights_only=False for internal models
+                checkpoint = torch.load(ckpt_path, map_location="cpu", weights_only=False)
+                model.load_state_dict(checkpoint["state_dict"])
+            else:
+                raise
 
         engine = Engine()
 
@@ -88,7 +106,7 @@ class AnomalyEngine:
     async def preload_anomaly_model(self, ckpt_path: str) -> bool:
         """Preload an anomaly model asynchronously so it's ready for inference."""
         try:
-            if not self.is_anomaly_model_ready(ckpt_path):
+            if not self._is_anomaly_model_ready(ckpt_path):
                 await asyncio.to_thread(self._load_anomaly_model, ckpt_path)
             return True
         except Exception as e:
@@ -103,7 +121,7 @@ class AnomalyEngine:
             mask_threshold: int,
             min_area : int,
     ) -> Dict:
-        """Perfrom anomaly detection on the full image."""
+        """Perform anomaly detection on the full image."""
 
         if image_rgb is None:
             print("input image is not provided.")
@@ -190,15 +208,15 @@ class AnomalyEngine:
                 anomaly_results = []
                 anomaly_id = 1
 
-                for label in range(1, num_labels):
-                    area = stats[label, cv2.CC_STAT_AREA]
+                for l_idx in range(1, num_labels):
+                    area = stats[l_idx, cv2.CC_STAT_AREA]
                     if area < min_area:
                         continue
 
-                    x = stats[label, cv2.CC_STAT_LEFT]
-                    y = stats[label, cv2.CC_STAT_TOP]
-                    w = stats[label, cv2.CC_STAT_WIDTH]
-                    h = stats[label, cv2.CC_STAT_HEIGHT]
+                    x = stats[l_idx, cv2.CC_STAT_LEFT]
+                    y = stats[l_idx, cv2.CC_STAT_TOP]
+                    w = stats[l_idx, cv2.CC_STAT_WIDTH]
+                    h = stats[l_idx, cv2.CC_STAT_HEIGHT]
 
                     anomaly_results.append(
                         {
@@ -212,7 +230,7 @@ class AnomalyEngine:
                                 y + h,
                             ],
                             "area": float(area),
-                            "mask": labels_im == label,
+                            "mask": labels_im == l_idx,
                         }
                     )
 
@@ -229,12 +247,10 @@ class AnomalyEngine:
 
         except Exception as e:
             print(f"Error while detecting anomaly: {e}")
+            import traceback
+            traceback.print_exc()
             return {}
 
         finally:
             if tmp_path and os.path.exists(tmp_path):
-                os.remove(tmp_path)  
-
-                
-            
-        
+                os.remove(tmp_path)
